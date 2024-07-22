@@ -1,9 +1,7 @@
 import os
-import shutil
 from pathlib import Path
 from typing import Any, List, Dict
 
-import elevaite_file_client
 import numpy as np
 import torch.cuda
 from fastapi import FastAPI
@@ -41,8 +39,7 @@ def numpy_to_std(obj):
     else:
         raise TypeError(f"Could not serialize evaluation object: {obj}")
 
-LOCAL_MODEL_PATH = "model"
-MODEL_URL = os.getenv("MODEL_URL")
+LOCAL_MODEL_PATH = str(Path("model").absolute())
 
 
 class InferenceRequest(BaseModel):
@@ -54,9 +51,6 @@ class InferenceRequest(BaseModel):
 @serve.ingress(app)
 class ModelDeployment:
     def __init__(self):
-        if Path(LOCAL_MODEL_PATH).exists():
-            shutil.rmtree(LOCAL_MODEL_PATH)
-        elevaite_file_client.download_directory(MODEL_URL, LOCAL_MODEL_PATH)
         self.pipe = pipeline(
             os.getenv("TASK"),
             model=LOCAL_MODEL_PATH,

@@ -1,7 +1,11 @@
 import os
+import shutil
+from pathlib import Path
 from typing import Any, List, Dict
 
+import elevaite_file_client
 import numpy as np
+import torch.cuda
 from fastapi import FastAPI
 from pydantic import BaseModel
 from ray import serve
@@ -24,22 +28,21 @@ def numpy_to_std(obj):
     elif isinstance(obj, dict):
         new_obj = {}
         for key, value in obj.items():
-            if type(key) is not str:
-                raise TypeError(
-                    f"Dictionary contains invalid key {key!r}; {type(key)=}"
-                )
             new_obj[key] = numpy_to_std(value)
         return new_obj
-    elif type(obj) in (int, float, str):
+    elif type(obj) in (int, float, str, bool) or obj is None:
         return obj
     elif isinstance(obj, np.integer):
         return int(obj)
     elif isinstance(obj, np.floating):
         return float(obj)
+    elif isinstance(obj, torch.dtype):
+        return str(obj)
     else:
         raise TypeError(f"Could not serialize evaluation object: {obj}")
 
-model_name = os.getenv("MODEL_NAME", "dslim/bert-base-NER")
+LOCAL_MODEL_PATH = "model"
+MODEL_URL = os.getenv("MODEL_URL")
 
 
 class InferenceRequest(BaseModel):
@@ -51,8 +54,15 @@ class InferenceRequest(BaseModel):
 @serve.ingress(app)
 class ModelDeployment:
     def __init__(self):
-        model_name = os.getenv("MODEL_NAME", "dslim/bert-base-NER")
-        self.pipe = pipeline(model=model_name)
+        if Path(LOCAL_MODEL_PATH).exists():
+            shutil.rmtree(LOCAL_MODEL_PATH)
+        elevaite_file_client.download_directory(MODEL_URL, LOCAL_MODEL_PATH)
+        self.pipe = pipeline(
+            os.getenv("TASK"),
+            model=LOCAL_MODEL_PATH,
+            trust_remote_code=bool(int(os.getenv("ELEVAITE_TRUST_REMOTE_CODE", "0"))),
+            device="cuda" if torch.cuda.is_available() else "cpu",
+        )
 
     @app.post("/infer")
     def infer(self, inference_request: InferenceRequest) -> dict:
@@ -62,6 +72,6 @@ class ModelDeployment:
 
     @app.get("/model_config")
     def model_config(self):
-        return self.pipe.model.config
+        return numpy_to_std(self.pipe.model.config.__dict__)
 
 deployment = ModelDeployment.bind()

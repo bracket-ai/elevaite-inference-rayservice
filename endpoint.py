@@ -9,7 +9,6 @@ from pydantic import BaseModel
 from ray import serve
 
 # These imports are used only for type hints:
-from starlette.requests import Request
 from transformers import pipeline
 
 app = FastAPI()

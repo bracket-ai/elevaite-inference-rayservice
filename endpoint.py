@@ -51,9 +51,9 @@ class InferenceRequest(BaseModel):
 class ModelDeployment:
     def __init__(self):
         self.pipe = pipeline(
-            os.getenv("TASK"),
-            model=LOCAL_MODEL_PATH,
-            trust_remote_code=bool(int(os.getenv("ELEVAITE_TRUST_REMOTE_CODE", "0"))),
+            task=os.getenv("TASK", "token-classification"),
+            model=os.getenv("MODEL_PATH", "/model"),
+            trust_remote_code=bool(int(os.getenv("TRUST_REMOTE_CODE", "0"))),
             device="cuda" if torch.cuda.is_available() else "cpu",
         )
 

@@ -49,13 +49,20 @@ class InferenceRequest(BaseModel):
 @serve.deployment
 @serve.ingress(app)
 class ModelDeployment:
-    def __init__(self):
+    def _refresh(self):
         self.pipe = pipeline(
             task=os.getenv("TASK", "token-classification"),
             model=os.getenv("MODEL_PATH", "/model"),
             trust_remote_code=bool(int(os.getenv("TRUST_REMOTE_CODE", "0"))),
             device="cuda" if torch.cuda.is_available() else "cpu",
         )
+
+    def __init__(self):
+        self._refresh()
+
+    @app.post("/refresh_model")
+    def refresh_model(self):
+        self._refresh()
 
     @app.get("/model_device")
     def model_device(self):

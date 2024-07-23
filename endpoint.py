@@ -57,6 +57,10 @@ class ModelDeployment:
             device="cuda" if torch.cuda.is_available() else "cpu",
         )
 
+    @app.get("/model_device")
+    def model_device(self):
+        return str(self.pipe.device)
+
     @app.post("/infer")
     def infer(self, inference_request: InferenceRequest) -> dict:
         args = inference_request.args

@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 from typing import Any, List, Dict
 
@@ -7,6 +6,7 @@ import torch.cuda
 from fastapi import FastAPI
 from pydantic import BaseModel
 from ray import serve
+from ray.serve import Application
 
 # These imports are used only for type hints:
 from transformers import pipeline
@@ -51,13 +51,16 @@ class InferenceRequest(BaseModel):
 class ModelDeployment:
     def _refresh(self):
         self.pipe = pipeline(
-            task=os.getenv("TASK", "token-classification"),
-            model=os.getenv("MODEL_PATH", "/model"),
-            trust_remote_code=bool(int(os.getenv("TRUST_REMOTE_CODE", "0"))),
+            task=self.task,
+            model=self.model_path,
+            trust_remote_code=self.trust_remote_code,
             device="cuda" if torch.cuda.is_available() else "cpu",
         )
 
-    def __init__(self):
+    def __init__(self, model_path: str, task: str, trust_remote_code: bool):
+        self.model_path = model_path
+        self.task = task
+        self.trust_remote_code = trust_remote_code
         self._refresh()
 
     @app.post("/refresh_model")
@@ -78,4 +81,5 @@ class ModelDeployment:
     def model_config(self):
         return numpy_to_std(self.pipe.model.config.__dict__)
 
-deployment = ModelDeployment.bind()
+def deployment(args) -> Application:
+    return ModelDeployment.bind(args["model_path"], args["task"], bool(int(args["trust_remote_code"])))

@@ -1,3 +1,4 @@
+import enum
 from pathlib import Path
 from typing import Any, List, Dict
 
@@ -8,7 +9,7 @@ from pydantic import BaseModel
 from ray import serve
 from ray.serve import Application
 
-# These imports are used only for type hints:
+from sentence_transformers import SentenceTransformer
 from transformers import pipeline
 
 app = FastAPI()
@@ -17,7 +18,7 @@ app = FastAPI()
 def numpy_to_std(obj):
     """Convert all objects in dict (recursively) from numpy types to vanilla
     Python types."""
-    if isinstance(obj, list):
+    if isinstance(obj, list) or isinstance(obj, np.ndarray):
         new_obj = []
         for item in obj:
             new_obj.append(numpy_to_std(item))
@@ -36,9 +37,7 @@ def numpy_to_std(obj):
     elif isinstance(obj, torch.dtype):
         return str(obj)
     else:
-        raise TypeError(f"Could not serialize evaluation object: {obj}")
-
-LOCAL_MODEL_PATH = str(Path("model").absolute())
+        raise TypeError(f"Could not serialize evaluation object: {type(obj)=} {obj}")
 
 
 class InferenceRequest(BaseModel):
@@ -46,9 +45,14 @@ class InferenceRequest(BaseModel):
     kwargs: Dict[str, Any]
 
 
+class Library(enum.Enum):
+    transformers = "transformers"
+    sentence_transformers = "sentence-transformers"
+
+
 @serve.deployment
 @serve.ingress(app)
-class ModelDeployment:
+class TransformersModelDeployment:
     def _refresh(self):
         self.pipe = pipeline(
             task=self.task,
@@ -68,7 +72,7 @@ class ModelDeployment:
         self._refresh()
 
     @app.get("/model_device")
-    def model_device(self):
+    def model_device(self) -> str:
         return str(self.pipe.device)
 
     @app.post("/infer")
@@ -81,5 +85,41 @@ class ModelDeployment:
     def model_config(self):
         return numpy_to_std(self.pipe.model.config.__dict__)
 
+
+@serve.deployment
+@serve.ingress(app)
+class SentenceTransformersModelDeployment:
+    def _refresh(self):
+        self.model = SentenceTransformer(
+            self.model_path,
+            trust_remote_code=self.trust_remote_code,
+            device="cuda" if torch.cuda.is_available() else "cpu",
+        )
+
+    def __init__(self, model_path: str, trust_remote_code: bool):
+        self.model_path = model_path
+        self.trust_remote_code = trust_remote_code
+        self._refresh()
+
+    @app.post("/refresh_model")
+    def refresh_model(self):
+        self._refresh()
+
+    @app.get("/model_device")
+    def model_device(self) -> str:
+        return str(self.model.device)
+
+    @app.post("/infer")
+    def infer(self, inference_request: InferenceRequest) -> dict:
+        args = inference_request.args
+        kwargs = inference_request.kwargs
+        return {"result": numpy_to_std(self.model.encode(*args, **kwargs))}
+
+
 def deployment(args) -> Application:
-    return ModelDeployment.bind(args["model_path"], args["task"], bool(int(args["trust_remote_code"])))
+    if args["library"] == "transformers":
+        return TransformersModelDeployment.bind(args["model_path"], args["task"], args["trust_remote_code"])
+    elif args["library"] == "sentence-transformers":
+        return SentenceTransformersModelDeployment.bind(args["model_path"], args["trust_remote_code"])
+    else:
+        raise ValueError(f"Library '{args['library']}' not supported")

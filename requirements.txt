@@ -1,4 +1,4 @@
-elevaite-file-client @ git+ssh://git@github.com/bracket-ai/elevaite-file-client.git@v0.0.0
 ray[serve]
+sentence-transformers
 torch
 transformers

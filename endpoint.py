@@ -5,7 +5,7 @@ from typing import Any, List, Dict
 import numpy as np
 import torch.cuda
 from fastapi import FastAPI
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from ray import serve
 from ray.serve import Application
 
@@ -41,8 +41,8 @@ def numpy_to_std(obj):
 
 
 class InferenceRequest(BaseModel):
-    args: List[Any] | None
-    kwargs: Dict[str, Any] | None
+    args: List[Any] = Field(default=[])
+    kwargs: Dict[str, Any] = Field(default={})
 
 
 class Library(enum.Enum):

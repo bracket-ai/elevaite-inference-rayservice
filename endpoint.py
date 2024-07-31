@@ -41,8 +41,8 @@ def numpy_to_std(obj):
 
 
 class InferenceRequest(BaseModel):
-    args: List[Any]
-    kwargs: Dict[str, Any]
+    args: List[Any] | None
+    kwargs: Dict[str, Any] | None
 
 
 class Library(enum.Enum):

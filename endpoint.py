@@ -85,6 +85,10 @@ class TransformersModelDeployment:
     def model_config(self):
         return numpy_to_std(self.pipe.model.config.__dict__)
 
+    @app.post("/cuda_available")
+    def cuda_available(self) -> bool:
+        return torch.cuda.is_available()
+
 
 @serve.deployment
 @serve.ingress(app)

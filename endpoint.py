@@ -52,23 +52,16 @@ class Library(enum.Enum):
 @serve.deployment
 @serve.ingress(app)
 class TransformersModelDeployment:
-    def _refresh(self):
+    def __init__(self, model_path: str, task: str, trust_remote_code: bool):
+        self.model_path = model_path
+        self.task = task
+        self.trust_remote_code = trust_remote_code
         self.pipe = pipeline(
             task=self.task,
             model=self.model_path,
             trust_remote_code=self.trust_remote_code,
             device="cuda" if torch.cuda.is_available() else "cpu",
         )
-
-    def __init__(self, model_path: str, task: str, trust_remote_code: bool):
-        self.model_path = model_path
-        self.task = task
-        self.trust_remote_code = trust_remote_code
-        self._refresh()
-
-    @app.post("/refresh_model")
-    def refresh_model(self):
-        self._refresh()
 
     @app.get("/model_device")
     def model_device(self) -> str:

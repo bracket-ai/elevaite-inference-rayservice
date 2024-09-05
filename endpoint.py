@@ -1,5 +1,4 @@
 import enum
-from pathlib import Path
 from typing import Any, List, Dict
 
 import numpy as np
@@ -89,21 +88,14 @@ class TransformersModelDeployment:
 @serve.deployment
 @serve.ingress(app)
 class SentenceTransformersModelDeployment:
-    def _refresh(self):
+    def __init__(self, model_path: str, trust_remote_code: bool):
+        self.model_path = model_path
+        self.trust_remote_code = trust_remote_code
         self.model = SentenceTransformer(
             self.model_path,
             trust_remote_code=self.trust_remote_code,
             device="cuda" if torch.cuda.is_available() else "cpu",
         )
-
-    def __init__(self, model_path: str, trust_remote_code: bool):
-        self.model_path = model_path
-        self.trust_remote_code = trust_remote_code
-        self._refresh()
-
-    @app.post("/refresh_model")
-    def refresh_model(self):
-        self._refresh()
 
     @app.get("/model_device")
     def model_device(self) -> str:

@@ -151,7 +151,7 @@ class SentenceTransformersModelDeployment:
 
 
 def deployment(args) -> Application:
-    config = yaml.safe_load(open(Path(args["model_path"]), "r"))
+    config = yaml.safe_load(open(Path(args["model_path"]) / "config.json", "r"))
     if args["library"] == "transformers" and args["task"] == "visual-question-answering" and config["auto_map"]["AutoConfig"].endswith("MiniCPMVConfig"):
         return MiniCPMDeployment.bind(args["model_path"], args["task"], args["trust_remote_code"])
     elif args["library"] == "transformers":

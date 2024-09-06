@@ -1,15 +1,20 @@
 import enum
+from io import BytesIO
+from pathlib import Path
 from typing import Any, List, Dict
 
 import numpy as np
+import requests
 import torch.cuda
+import yaml
+from PIL import Image
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 from ray import serve
 from ray.serve import Application
 
 from sentence_transformers import SentenceTransformer
-from transformers import pipeline
+from transformers import pipeline, AutoModel, AutoTokenizer
 
 app = FastAPI()
 
@@ -42,6 +47,11 @@ def numpy_to_std(obj):
 class InferenceRequest(BaseModel):
     args: List[Any] = Field(default=[])
     kwargs: Dict[str, Any] = Field(default={})
+
+
+class MiniCPMInferenceRequest(BaseModel):
+    image_url: str
+    messages: list[dict[str, str]]
 
 
 class Library(enum.Enum):
@@ -80,6 +90,45 @@ class TransformersModelDeployment:
 
 @serve.deployment
 @serve.ingress(app)
+class MiniCPMDeployment:
+    def __init__(self, model_path: str, task: str, trust_remote_code: bool):
+        self.model_path = model_path
+        self.task = task
+        self.trust_remote_code = trust_remote_code
+
+        model = AutoModel.from_pretrained(model_path, trust_remote_code=trust_remote_code)
+        model = model.to(device="cuda" if torch.cuda.is_available() else "cpu")
+        self.model = model
+
+        self.tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+
+    @app.post("/infer")
+    def image_infer(self, inference_request: MiniCPMInferenceRequest):
+        # Get the image via HTTP:
+        print(f"Downloading image at url: {inference_request.image_url}")
+        response = requests.get(inference_request.image_url)
+        print("Retrieved image")
+        img = Image.open(BytesIO(response.content)).convert("RGB")
+        print("Converted image")
+
+        return self.model.chat(
+            image=img,
+            msgs=inference_request.messages,
+            tokenizer=self.tokenizer
+        )
+
+    @app.get("/model_config")
+    def model_config(self):
+        return numpy_to_std(self.model.config.__dict__)
+
+
+    @app.get("/model_device")
+    def model_device(self) -> str:
+        return str(self.model.device)
+
+
+@serve.deployment
+@serve.ingress(app)
 class SentenceTransformersModelDeployment:
     def __init__(self, model_path: str, trust_remote_code: bool):
         self.model_path = model_path
@@ -102,7 +151,10 @@ class SentenceTransformersModelDeployment:
 
 
 def deployment(args) -> Application:
-    if args["library"] == "transformers":
+    config = yaml.safe_load(open(Path(args["model_path"]), "r"))
+    if args["library"] == "transformers" and args["task"] == "visual-question-answering" and config["auto_map"]["AutoConfig"].endswith("MiniCPMVConfig"):
+        return MiniCPMDeployment.bind(args["model_path"], args["task"], args["trust_remote_code"])
+    elif args["library"] == "transformers":
         return TransformersModelDeployment.bind(args["model_path"], args["task"], args["trust_remote_code"])
     elif args["library"] == "sentence-transformers":
         return SentenceTransformersModelDeployment.bind(args["model_path"], args["trust_remote_code"])

@@ -1,4 +1,6 @@
+Pillow
 ray[serve]
 sentence-transformers
 torch
+torchvision
 transformers

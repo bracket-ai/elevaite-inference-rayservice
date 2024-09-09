@@ -1,14 +1,12 @@
 import enum
-from io import BytesIO
 from pathlib import Path
 from typing import Any, List, Dict
 
 import numpy as np
-import requests
 import torch.cuda
 import yaml
 from PIL import Image
-from fastapi import FastAPI
+from fastapi import FastAPI, File, UploadFile, Form
 from pydantic import BaseModel, Field
 from ray import serve
 from ray.serve import Application
@@ -47,11 +45,6 @@ def numpy_to_std(obj):
 class InferenceRequest(BaseModel):
     args: List[Any] = Field(default=[])
     kwargs: Dict[str, Any] = Field(default={})
-
-
-class MiniCPMInferenceRequest(BaseModel):
-    image_url: str
-    messages: list[dict[str, str]]
 
 
 class Library(enum.Enum):
@@ -102,18 +95,19 @@ class MiniCPMDeployment:
 
         self.tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
-    @app.post("/infer")
-    def image_infer(self, inference_request: MiniCPMInferenceRequest):
-        # Get the image via HTTP:
-        print(f"Downloading image at url: {inference_request.image_url}")
-        response = requests.get(inference_request.image_url)
-        print("Retrieved image")
-        img = Image.open(BytesIO(response.content)).convert("RGB")
+    @app.post("/image_infer")
+    def image_infer(
+        self,
+        message: str = Form(),
+        image_file: UploadFile = File()
+    ):
+        print(f"{image_file=!r}")
+        img = Image.open(image_file.file).convert("RGB")
         print("Converted image")
 
         return self.model.chat(
             image=img,
-            msgs=inference_request.messages,
+            msgs={"role": "user", "content": message},
             tokenizer=self.tokenizer
         )
 

@@ -107,7 +107,7 @@ class MiniCPMDeployment:
 
         return self.model.chat(
             image=img,
-            msgs={"role": "user", "content": message},
+            msgs=[{"role": "user", "content": message}],
             tokenizer=self.tokenizer
         )
 

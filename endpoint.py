@@ -1,4 +1,6 @@
 import enum
+import json
+from http import HTTPStatus
 from pathlib import Path
 from typing import Any, List, Dict
 
@@ -6,7 +8,7 @@ import numpy as np
 import torch.cuda
 import yaml
 from PIL import Image
-from fastapi import FastAPI, File, UploadFile, Form
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from pydantic import BaseModel, Field
 from ray import serve
 from ray.serve import Application
@@ -96,18 +98,24 @@ class MiniCPMDeployment:
         self.tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
     @app.post("/image_infer")
-    def image_infer(
+    async def image_infer(
         self,
-        message: str = Form(),
-        image_file: UploadFile = File()
+        messages: str = Form(...),  # Accept the list of dictionaries as JSON string in form data
+        image_file: UploadFile = File(...)
     ):
+        # Deserialize the JSON string into a list of dictionaries
+        try:
+            messages_list = json.loads(messages)  # Convert the JSON string to a list
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Invalid JSON format for messages")
+
+        print(f"{messages_list=}")
         print(f"{image_file=!r}")
         img = Image.open(image_file.file).convert("RGB")
-        print("Converted image")
 
         return self.model.chat(
             image=img,
-            msgs=[{"role": "user", "content": message}],
+            msgs=messages_list,
             tokenizer=self.tokenizer
         )
 

@@ -39,7 +39,7 @@ def numpy_to_std(obj):
     elif isinstance(obj, torch.dtype):
         return str(obj)
     else:
-        raise TypeError(f"Could not serialize evaluation object: {type(obj)=} {obj}")
+        return str(obj)
 
 
 class InferenceRequest(BaseModel):

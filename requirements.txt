@@ -1,4 +1,7 @@
+Pillow
+python-multipart
 ray[serve]
 sentence-transformers
 torch
+torchvision
 transformers

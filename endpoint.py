@@ -103,25 +103,27 @@ class MiniCPMDeployment:
     @app.post("/image_infer")
     async def image_infer(
         self,
-        messages: str = Form(
-            ...
-        ),  # Accept the list of dictionaries as JSON string in form data
+        # Accept args and kwargs as JSON:
+        json_args: str = Form(...),
+        json_kwargs: str = Form(...),
         image_file: UploadFile = File(...),
     ):
         # Deserialize the JSON string into a list of dictionaries
         try:
-            messages_list = json.loads(messages)  # Convert the JSON string to a list
+            args: list = json.loads(json_args)  # Convert the JSON string to a list
+            kwargs: dict = json.loads(json_kwargs)
         except json.JSONDecodeError:
             raise HTTPException(
                 status_code=HTTPStatus.BAD_REQUEST,
                 detail="Invalid JSON format for messages",
             )
 
-        print(f"{messages_list=}")
-        print(f"{image_file=!r}")
         img = Image.open(image_file.file).convert("RGB")
+        kwargs["image"] = img
 
-        return self.model.chat(image=img, msgs=messages_list, tokenizer=self.tokenizer)
+        print(f"{args=}")
+        print(f"{kwargs=}")
+        return self.model.chat(*args, **kwargs, image=img)
 
     @app.get("/model_config")
     def model_config(self):

@@ -123,7 +123,7 @@ class MiniCPMDeployment:
 
         print(f"{args=}")
         print(f"{kwargs=}")
-        return self.model.chat(*args, **kwargs, image=img)
+        return self.model.chat(*args, **kwargs)
 
     @app.get("/model_config")
     def model_config(self):

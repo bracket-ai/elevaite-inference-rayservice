@@ -120,6 +120,7 @@ class MiniCPMDeployment:
 
         img = Image.open(image_file.file).convert("RGB")
         kwargs["image"] = img
+        kwargs["tokenizer"] = self.tokenizer
 
         print(f"{args=}")
         print(f"{kwargs=}")

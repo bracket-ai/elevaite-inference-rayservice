@@ -110,7 +110,9 @@ class MiniCPMDeployment:
     ):
         # Deserialize the JSON string into a list of dictionaries
         try:
-            messages: list = json.loads(json_messages)  # Convert the JSON string to a list
+            messages: list = json.loads(
+                json_messages
+            )  # Convert the JSON string to a list
             kwargs: dict = json.loads(json_kwargs)
         except json.JSONDecodeError:
             raise HTTPException(
@@ -127,8 +129,13 @@ class MiniCPMDeployment:
                 for item in message["content"]:
                     if type(item) is int:
                         if item not in range(len(image_files)):
-                            raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Image indices must be 0-based, in range of total uploaded image files")
-                        processed_content.append(Image.open(image_files[item].file).convert("RGB"))
+                            raise HTTPException(
+                                status_code=HTTPStatus.BAD_REQUEST,
+                                detail="Image indices must be 0-based, in range of total uploaded image files",
+                            )
+                        processed_content.append(
+                            Image.open(image_files[item].file).convert("RGB")
+                        )
                     else:
                         processed_content.append(item)
                 processed_message["content"] = processed_content

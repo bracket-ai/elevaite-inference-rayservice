@@ -104,13 +104,13 @@ class MiniCPMDeployment:
     async def image_infer(
         self,
         # Accept args and kwargs as JSON:
-        json_args: str = Form(...),
+        image_files: list[UploadFile],
+        json_messages: str = Form(...),
         json_kwargs: str = Form(...),
-        image_file: UploadFile = File(...),
     ):
         # Deserialize the JSON string into a list of dictionaries
         try:
-            args: list = json.loads(json_args)  # Convert the JSON string to a list
+            messages: list = json.loads(json_messages)  # Convert the JSON string to a list
             kwargs: dict = json.loads(json_kwargs)
         except json.JSONDecodeError:
             raise HTTPException(
@@ -118,13 +118,26 @@ class MiniCPMDeployment:
                 detail="Invalid JSON format for messages",
             )
 
-        img = Image.open(image_file.file).convert("RGB")
-        kwargs["image"] = img
         kwargs["tokenizer"] = self.tokenizer
+        processed_messages = []
+        for message in messages:
+            processed_message = {**message}
+            if type(message["content"]) is list:
+                processed_content = []
+                for item in message["content"]:
+                    if type(item) is int:
+                        if item not in range(len(image_files)):
+                            raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Image indices must be 0-based, in range of total uploaded image files")
+                        processed_content.append(Image.open(image_files[item].file).convert("RGB"))
+                    else:
+                        processed_content.append(item)
+                processed_message["content"] = processed_content
+            processed_messages.append(processed_message)
+        kwargs["msgs"] = processed_messages
+        kwargs["image"] = None
 
-        print(f"{args=}")
         print(f"{kwargs=}")
-        return self.model.chat(*args, **kwargs)
+        return self.model.chat(**kwargs)
 
     @app.get("/model_config")
     def model_config(self):

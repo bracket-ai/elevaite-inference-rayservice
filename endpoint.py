@@ -104,7 +104,7 @@ class MiniCPMDeployment:
     async def image_infer(
         self,
         # Accept args and kwargs as JSON:
-        image_files: list[UploadFile],
+        image_files: list[UploadFile] = File([]),
         json_messages: str = Form(...),
         json_kwargs: str = Form(...),
     ):

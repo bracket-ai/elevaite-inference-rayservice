@@ -82,8 +82,6 @@ class TransformersModelDeployment:
         args = inference_request.args
         kwargs = inference_request.kwargs
 
-        self.logger.info(f"Received inference request with args: {args}, kwargs: {kwargs}")
-
         # Profiling block
         with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True) as prof:
             result = self.pipe(*args, **kwargs)
@@ -131,15 +129,12 @@ class MiniCPMDeployment:
         json_messages: str = Form(...),
         json_kwargs: str = Form(...),
     ):
-        self.logger.info("Received image_infer request")
         # Deserialize the JSON string into a list of dictionaries
         try:
             messages: list = json.loads(
                 json_messages
             )  # Convert the JSON string to a list
             kwargs: dict = json.loads(json_kwargs)
-            self.logger.debug(f"Deserialized messages: {messages}")
-            self.logger.debug(f"Deserialized kwargs: {kwargs}")
         except json.JSONDecodeError:
             self.logger.error("Invalid JSON format for messages")
             raise HTTPException(
@@ -171,9 +166,9 @@ class MiniCPMDeployment:
         kwargs["msgs"] = processed_messages
         kwargs["image"] = None
 
-        self.logger.info(f"Processed kwargs: {kwargs}")
-        result = self.model.chat(**kwargs)
-        self.logger.info("Chat inference completed successfully")
+        with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True) as prof:
+            result = self.model.chat(**kwargs)
+        self.logger.info(f"Profiling results:\n{prof.key_averages().table(sort_by='cuda_time_total', row_limit=10)}")
         return result
 
     @app.get("/model_config")
@@ -210,18 +205,15 @@ class SentenceTransformersModelDeployment:
 
     @app.get("/model_device")
     def model_device(self) -> str:
-        self.logger.info("Retrieving model device")
         return str(self.model.device)
 
     @app.post("/infer")
     def infer(self, inference_request: InferenceRequest) -> dict:
-        self.logger.info("Received inference request")
         args = inference_request.args
         kwargs = inference_request.kwargs
-        self.logger.debug(f"Inference args: {args}")
-        self.logger.debug(f"Inference kwargs: {kwargs}")
-        result = self.model.encode(*args, **kwargs)
-        self.logger.info("Inference completed successfully")
+        with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True) as prof:
+            result = self.model.encode(*args, **kwargs)
+        self.logger.info(f"Profiling results:\n{prof.key_averages().table(sort_by='cuda_time_total', row_limit=10)}")
         return {"result": numpy_to_std(result)}
 
 

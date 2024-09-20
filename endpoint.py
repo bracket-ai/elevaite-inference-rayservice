@@ -87,7 +87,7 @@ class TransformersModelDeployment:
             result = self.pipe(*args, **kwargs)
         
         # Log the profiling results
-        self.logger.info(f"Profiling results:\n{prof.key_averages().table(sort_by="cuda_time_total", row_limit=10)}")
+        self.logger.info(f"Profiling results:\n{prof.key_averages().table(sort_by='cuda_time_total', row_limit=10)}")
 
         return {"result": numpy_to_std(result)}
 

@@ -20,6 +20,7 @@ class TransformersModelDeployment:
             task=self.task,
             model=self.model_path,
             trust_remote_code=self.trust_remote_code,
+            low_mem_cpu_usage=True,
             device="cuda" if torch.cuda.is_available() else "cpu",
         )
 

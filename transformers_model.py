@@ -17,22 +17,38 @@ class TransformersModelDeployment:
         model_path: str,
         task: str,
         trust_remote_code: bool,
+        device: str = "auto",
         torch_dtype: str | None = None,
+        # low_cpu_mem_usage: bool = False,
     ):
         self.model_path = model_path
         self.task = task
         self.trust_remote_code = trust_remote_code
         self.torch_dtype = torch_dtype
+
+        if device not in ["cuda", "auto", "cpu"]:
+            raise ValueError("device must be one of 'auto', 'cuda', or 'cpu'")
+
+        if device == "auto":
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        elif device == "cuda" and not torch.cuda.is_available():
+            raise RuntimeError(
+                "CUDA was requested but is not available. Please check "
+                "for available resources."
+            )
+
         pipe_kwargs = {
             "task": self.task,
             "model": self.model_path,
             "trust_remote_code": self.trust_remote_code,
-            "device": "cuda" if torch.cuda.is_available() else "cpu",
-            "model_kwargs": {"low_cpu_mem_usage": True},
+            "device": device,
         }
 
         if torch_dtype:
             pipe_kwargs["torch_dtype"] = dtype_mapping.get(torch_dtype.lower(), None)
+
+        # if low_cpu_mem_usage:
+        #     pipe_kwargs["model_kwargs"] = {"low_cpu_mem_usage": True}
 
         # No need to call .eval() here, since pipeline does it for us
         # https://github.com/huggingface/transformers/blob/main/src/transformers/pipelines/base.py#L287-L290
@@ -52,12 +68,12 @@ class TransformersModelDeployment:
     def model_config(self):
         return numpy_to_std(self.pipe.model.config.__dict__)
 
-    @web_app.get("/device_map")
-    def device_map(self) -> dict:
-        return numpy_to_std(self.pipe.model.hf_device_map)
-
-
 def app_builder(args: dict) -> Application:
     return TransformersModelDeployment.bind(  # type: ignore[attr-defined]
-        args["model_path"], args["task"], args["trust_remote_code"], args["torch_dtype"]
+        args["model_path"], 
+        args["task"], 
+        args["trust_remote_code"], 
+        args["device"], 
+        args["torch_dtype"], 
+        args["low_cpu_mem_usage"], 
     )

@@ -68,12 +68,13 @@ class TransformersModelDeployment:
     def model_config(self):
         return numpy_to_std(self.pipe.model.config.__dict__)
 
+
 def app_builder(args: dict) -> Application:
     return TransformersModelDeployment.bind(  # type: ignore[attr-defined]
-        args["model_path"], 
-        args["task"], 
-        args["trust_remote_code"], 
-        args["device"], 
-        args["torch_dtype"], 
-        # args["low_cpu_mem_usage"], 
+        args["model_path"],
+        args["task"],
+        args["trust_remote_code"],
+        args["device"],
+        args["torch_dtype"],
+        # args["low_cpu_mem_usage"],
     )

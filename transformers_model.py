@@ -4,7 +4,7 @@ from ray import serve
 from ray.serve import Application
 from transformers import pipeline
 
-from utils import InferenceRequest, numpy_to_std, dtype_mapping
+from utils import InferenceRequest, dtype_mapping, numpy_to_std
 
 web_app = FastAPI()
 
@@ -12,7 +12,13 @@ web_app = FastAPI()
 @serve.deployment
 @serve.ingress(web_app)
 class TransformersModelDeployment:
-    def __init__(self, model_path: str, task: str, trust_remote_code: bool, torch_dtype: str):
+    def __init__(
+        self,
+        model_path: str,
+        task: str,
+        trust_remote_code: bool,
+        torch_dtype: str | None = None,
+    ):
         self.model_path = model_path
         self.task = task
         self.trust_remote_code = trust_remote_code
@@ -21,8 +27,8 @@ class TransformersModelDeployment:
             "task": self.task,
             "model": self.model_path,
             "trust_remote_code": self.trust_remote_code,
-            "low_mem_cpu_usage": True,
             "device": "cuda" if torch.cuda.is_available() else "cpu",
+            "model_kwargs": {"low_cpu_mem_usage": True},
         }
 
         if torch_dtype:
@@ -31,7 +37,6 @@ class TransformersModelDeployment:
         # No need to call .eval() here, since pipeline does it for us
         # https://github.com/huggingface/transformers/blob/main/src/transformers/pipelines/base.py#L287-L290
         self.pipe = pipeline(**pipe_kwargs)
-
 
     @web_app.get("/model_device")
     def model_device(self) -> str:
@@ -50,6 +55,7 @@ class TransformersModelDeployment:
     @web_app.get("/device_map")
     def device_map(self) -> dict:
         return numpy_to_std(self.pipe.model.hf_device_map)
+
 
 def app_builder(args: dict) -> Application:
     return TransformersModelDeployment.bind(  # type: ignore[attr-defined]

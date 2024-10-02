@@ -40,6 +40,7 @@ class Library(enum.Enum):
     transformers = "transformers"
     sentence_transformers = "sentence-transformers"
 
+
 dtype_mapping = {
     "float16": torch.float16,
     "float32": torch.float32,
@@ -52,5 +53,5 @@ dtype_mapping = {
     "int16": torch.int16,
     "int32": torch.int32,
     "int64": torch.int64,
-    "bool": torch.bool
+    "bool": torch.bool,
 }

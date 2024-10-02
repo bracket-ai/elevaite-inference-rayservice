@@ -75,5 +75,5 @@ def app_builder(args: dict) -> Application:
         args["trust_remote_code"], 
         args["device"], 
         args["torch_dtype"], 
-        args["low_cpu_mem_usage"], 
+        # args["low_cpu_mem_usage"], 
     )

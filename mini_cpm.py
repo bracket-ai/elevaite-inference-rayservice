@@ -8,7 +8,7 @@ from ray import serve
 from ray.serve import Application
 from transformers import AutoModel, AutoTokenizer
 
-from utils import numpy_to_std
+from utils import numpy_to_std, dtype_mapping
 
 web_app = FastAPI()
 
@@ -16,15 +16,25 @@ web_app = FastAPI()
 @serve.deployment
 @serve.ingress(web_app)
 class MiniCPMDeployment:
-    def __init__(self, model_path: str, task: str, trust_remote_code: bool):
+    def __init__(self, model_path: str, task: str, trust_remote_code: bool, torch_dtype: str = None):
         self.model_path = model_path
         self.task = task
         self.trust_remote_code = trust_remote_code
 
+        model_args = {
+            "model_name_or_path": self.model_path,
+            "trust_remote_code": self.trust_remote_code,
+            "device": "cuda" if torch.cuda.is_available() else "cpu",
+        }
+
+        if torch_dtype:
+            model_args["torch_dtype"] = dtype_mapping.get(torch_dtype.lower(), None)
+
         model = AutoModel.from_pretrained(
-            model_path, trust_remote_code=trust_remote_code
+            **model_args
         )
         model = model.to(device="cuda" if torch.cuda.is_available() else "cpu")
+        model = model.eval()
         self.model = model
 
         self.tokenizer = AutoTokenizer.from_pretrained(
@@ -75,7 +85,8 @@ class MiniCPMDeployment:
         kwargs["image"] = None
 
         print(f"{kwargs=}")
-        return self.model.chat(**kwargs)
+        with torch.no_grad():
+            return self.model.chat(**kwargs)
 
     @web_app.get("/model_config")
     def model_config(self):
@@ -84,6 +95,10 @@ class MiniCPMDeployment:
     @web_app.get("/model_device")
     def model_device(self) -> str:
         return str(self.model.device)
+    
+    @web_app.get("/device_map")
+    def device_map(self) -> dict:
+        return numpy_to_std(self.model.hf_device_map)
 
 
 def app_builder(args: dict) -> Application:

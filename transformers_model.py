@@ -68,6 +68,16 @@ class TransformersModelDeployment:
     def model_config(self):
         return numpy_to_std(self.pipe.model.config.__dict__)
 
+    @web_app.get("/get_num_threads")
+    def get_num_threads(self):
+        import os
+
+        return {
+            "cpu_count": os.cpu_count(),
+            "num_threads": torch.get_num_threads(),
+            "ray_omp_num_threads": os.environ.get("OMP_NUM_THREADS", None),
+        }
+
 
 def app_builder(args: dict) -> Application:
     return TransformersModelDeployment.bind(  # type: ignore[attr-defined]

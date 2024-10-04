@@ -19,7 +19,6 @@ class TransformersModelDeployment:
         trust_remote_code: bool,
         device: str = "auto",
         torch_dtype: str | None = None,
-        # low_cpu_mem_usage: bool = False,
     ):
         self.model_path = model_path
         self.task = task
@@ -47,9 +46,6 @@ class TransformersModelDeployment:
         if torch_dtype:
             pipe_kwargs["torch_dtype"] = dtype_mapping.get(torch_dtype.lower(), None)
 
-        # if low_cpu_mem_usage:
-        #     pipe_kwargs["model_kwargs"] = {"low_cpu_mem_usage": True}
-
         # No need to call .eval() here, since pipeline does it for us
         # https://github.com/huggingface/transformers/blob/main/src/transformers/pipelines/base.py#L287-L290
         self.pipe = pipeline(**pipe_kwargs)
@@ -62,7 +58,17 @@ class TransformersModelDeployment:
     def infer(self, inference_request: InferenceRequest) -> dict:
         args = inference_request.args
         kwargs = inference_request.kwargs
-        return {"result": numpy_to_std(self.pipe(*args, **kwargs))}
+        try:
+            with torch.no_grad():
+                result = self.pipe(*args, **kwargs)
+            return {"result": numpy_to_std(result)}
+        except Exception as e:
+            return {"error": str(e)}
+        finally:
+            del args, kwargs
+            if self.pipe.device.type == "cuda":
+                torch.cuda.empty_cache()  # Clear cache after processing
+
 
     @web_app.get("/model_config")
     def model_config(self):
@@ -86,5 +92,4 @@ def app_builder(args: dict) -> Application:
         args["trust_remote_code"],
         args["device"],
         args["torch_dtype"],
-        # args["low_cpu_mem_usage"],
     )

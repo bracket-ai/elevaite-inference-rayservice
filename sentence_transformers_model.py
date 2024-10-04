@@ -1,3 +1,4 @@
+import gc
 from http import HTTPStatus
 
 import torch.cuda
@@ -55,6 +56,11 @@ class SentenceTransformersModelDeployment:
         self.model = SentenceTransformer(**model_args)
         self.model = self.model.eval()
 
+    def _clear_cache(self):
+        if str(self.model.device) == "cuda":
+            torch.cuda.empty_cache()
+        gc.collect()
+
     @web_app.get("/model_device")
     def model_device(self) -> str:
         return str(self.model.device)
@@ -64,16 +70,16 @@ class SentenceTransformersModelDeployment:
         args = inference_request.args
         kwargs = inference_request.kwargs
         try:
+            self._clear_cache()
             with torch.no_grad():
                 return {"result": numpy_to_std(self.model.encode(*args, **kwargs))}
         except Exception as e:
+            self._clear_cache()
             raise HTTPException(
                 status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=str(e)
             )
         finally:
-            del args, kwargs
-            if str(self.model.device) == "cuda":
-                torch.cuda.empty_cache()  # Clear cache after processing
+            self._clear_cache()
 
     @web_app.get("/get_num_threads")
     def get_num_threads(self):
@@ -84,6 +90,11 @@ class SentenceTransformersModelDeployment:
             "num_threads": torch.get_num_threads(),
             "ray_omp_num_threads": os.environ.get("OMP_NUM_THREADS", None),
         }
+
+    @web_app.post("/empty_cache")
+    def empty_cache(self):
+        self._clear_cache()
+        return {"message": "Cache cleared."}
 
 
 def app_builder(args: dict) -> Application:

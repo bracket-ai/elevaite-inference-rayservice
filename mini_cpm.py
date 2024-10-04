@@ -1,3 +1,4 @@
+import gc
 import json
 from http import HTTPStatus
 
@@ -58,6 +59,11 @@ class MiniCPMDeployment:
             model_path, trust_remote_code=True
         )
 
+    def _clear_cache(self):
+        if str(self.model.device) == "cuda":
+            torch.cuda.empty_cache()
+        gc.collect()
+
     @web_app.post("/image_infer")
     async def image_infer(
         self,
@@ -79,6 +85,7 @@ class MiniCPMDeployment:
             )
 
         try:
+            self._clear_cache()
             kwargs["tokenizer"] = self.tokenizer
             processed_messages = []
             for message in messages:
@@ -106,13 +113,18 @@ class MiniCPMDeployment:
             with torch.no_grad():
                 return self.model.chat(**kwargs)
         except Exception as e:
+            self._clear_cache()
             raise HTTPException(
                 status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=str(e)
             )
         finally:
+            self._clear_cache()
             del kwargs
-            if self.model.device.type == "cuda":
-                torch.cuda.empty_cache()  # Clear cache after processing
+
+    @web_app.post("/empty_cache")
+    def empty_cache(self):
+        self._clear_cache()
+        return {"message": "Cache cleared."}
 
     @web_app.get("/model_config")
     def model_config(self):

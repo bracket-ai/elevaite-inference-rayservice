@@ -1,9 +1,10 @@
+from http import HTTPStatus
+
 import torch.cuda
 from fastapi import FastAPI, HTTPException
 from ray import serve
 from ray.serve import Application
 from transformers import pipeline
-from http import HTTPStatus
 
 from utils import InferenceRequest, dtype_mapping, numpy_to_std
 
@@ -64,7 +65,9 @@ class TransformersModelDeployment:
                 result = self.pipe(*args, **kwargs)
             return {"result": numpy_to_std(result)}
         except Exception as e:
-            raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=str(e))
+            raise HTTPException(
+                status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=str(e)
+            )
         finally:
             del args, kwargs
             if str(self.pipe.device) == "cuda":

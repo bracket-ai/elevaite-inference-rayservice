@@ -1,9 +1,10 @@
+from http import HTTPStatus
+
 import torch.cuda
 from fastapi import FastAPI, HTTPException
 from ray import serve
 from ray.serve import Application
 from sentence_transformers import SentenceTransformer
-from http import HTTPStatus
 
 from utils import InferenceRequest, dtype_mapping, numpy_to_std
 
@@ -66,7 +67,9 @@ class SentenceTransformersModelDeployment:
             with torch.no_grad():
                 return {"result": numpy_to_std(self.model.encode(*args, **kwargs))}
         except Exception as e:
-            raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=str(e))
+            raise HTTPException(
+                status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=str(e)
+            )
         finally:
             del args, kwargs
             if str(self.model.device) == "cuda":

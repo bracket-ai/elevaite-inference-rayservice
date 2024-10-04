@@ -106,7 +106,7 @@ class MiniCPMDeployment:
             with torch.no_grad():
                 return self.model.chat(**kwargs)
         except Exception as e:
-            return {"error": str(e)}
+            raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=str(e))
         finally:
             del kwargs
             if self.model.device.type == "cuda":

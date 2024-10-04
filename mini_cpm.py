@@ -133,5 +133,9 @@ class MiniCPMDeployment:
 
 def app_builder(args: dict) -> Application:
     return MiniCPMDeployment.bind(  # type: ignore[attr-defined]
-        args["model_path"], args["task"], args["trust_remote_code"]
+        args["model_path"],
+        args["task"],
+        args["trust_remote_code"],
+        args["device"],
+        args["torch_dtype"],
     )

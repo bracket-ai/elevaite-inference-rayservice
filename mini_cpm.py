@@ -21,24 +21,36 @@ class MiniCPMDeployment:
         model_path: str,
         task: str,
         trust_remote_code: bool,
+        device: str = "auto",
         torch_dtype: str | None = None,
     ):
         self.model_path = model_path
         self.task = task
         self.trust_remote_code = trust_remote_code
+        self.device = device
+        self.torch_dtype = torch_dtype
+
+        if device not in ["cuda", "auto", "cpu"]:
+            raise ValueError("device must be one of 'auto', 'cuda', or 'cpu'")
+
+        if device == "auto":
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        elif device == "cuda" and not torch.cuda.is_available():
+            raise RuntimeError(
+                "CUDA was requested but is not available. Please check "
+                "for available resources."
+            )
 
         model_args = {
             "model_name_or_path": self.model_path,
             "trust_remote_code": self.trust_remote_code,
             "device": "cuda" if torch.cuda.is_available() else "cpu",
-            "low_cpu_mem_usage": True,
         }
 
         if torch_dtype:
             model_args["torch_dtype"] = dtype_mapping.get(torch_dtype.lower(), None)
 
         model = AutoModel.from_pretrained(**model_args)
-        model = model.to(device="cuda" if torch.cuda.is_available() else "cpu")
         model = model.eval()
         self.model = model
 
@@ -66,32 +78,39 @@ class MiniCPMDeployment:
                 detail="Invalid JSON format for messages",
             )
 
-        kwargs["tokenizer"] = self.tokenizer
-        processed_messages = []
-        for message in messages:
-            processed_message = {**message}
-            if type(message["content"]) is list:
-                processed_content = []
-                for item in message["content"]:
-                    if type(item) is int:
-                        if item not in range(len(image_files)):
-                            raise HTTPException(
-                                status_code=HTTPStatus.BAD_REQUEST,
-                                detail="Image indices must be 0-based, in range of total uploaded image files",
+        try:
+            kwargs["tokenizer"] = self.tokenizer
+            processed_messages = []
+            for message in messages:
+                processed_message = {**message}
+                if type(message["content"]) is list:
+                    processed_content = []
+                    for item in message["content"]:
+                        if type(item) is int:
+                            if item not in range(len(image_files)):
+                                raise HTTPException(
+                                    status_code=HTTPStatus.BAD_REQUEST,
+                                    detail="Image indices must be 0-based, in range of total uploaded image files",
+                                )
+                            processed_content.append(
+                                Image.open(image_files[item].file).convert("RGB")
                             )
-                        processed_content.append(
-                            Image.open(image_files[item].file).convert("RGB")
-                        )
-                    else:
-                        processed_content.append(item)
-                processed_message["content"] = processed_content
-            processed_messages.append(processed_message)
-        kwargs["msgs"] = processed_messages
-        kwargs["image"] = None
+                        else:
+                            processed_content.append(item)
+                    processed_message["content"] = processed_content
+                processed_messages.append(processed_message)
+            kwargs["msgs"] = processed_messages
+            kwargs["image"] = None
 
-        print(f"{kwargs=}")
-        with torch.no_grad():
-            return self.model.chat(**kwargs)
+            print(f"{kwargs=}")
+            with torch.no_grad():
+                return self.model.chat(**kwargs)
+        except Exception as e:
+            return {"error": str(e)}
+        finally:
+            del kwargs
+            if self.model.device.type == "cuda":
+                torch.cuda.empty_cache()  # Clear cache after processing
 
     @web_app.get("/model_config")
     def model_config(self):
@@ -101,9 +120,15 @@ class MiniCPMDeployment:
     def model_device(self) -> str:
         return str(self.model.device)
 
-    @web_app.get("/device_map")
-    def device_map(self) -> dict:
-        return numpy_to_std(self.model.hf_device_map)
+    @web_app.get("/get_num_threads")
+    def get_num_threads(self):
+        import os
+
+        return {
+            "cpu_count": os.cpu_count(),
+            "num_threads": torch.get_num_threads(),
+            "ray_omp_num_threads": os.environ.get("OMP_NUM_THREADS", None),
+        }
 
 
 def app_builder(args: dict) -> Application:

@@ -69,7 +69,6 @@ class TransformersModelDeployment:
             if self.pipe.device.type == "cuda":
                 torch.cuda.empty_cache()  # Clear cache after processing
 
-
     @web_app.get("/model_config")
     def model_config(self):
         return numpy_to_std(self.pipe.model.config.__dict__)

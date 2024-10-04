@@ -1,3 +1,4 @@
+import gc
 from http import HTTPStatus
 
 import torch.cuda
@@ -63,19 +64,22 @@ class TransformersModelDeployment:
 
         try:
             if str(self.pipe.device) == "cuda":
-                torch.cuda.empty_cache()  # Clear cache before processing
+                torch.cuda.empty_cache()  # Clear CUDA cache before processing
+            gc.collect()  # Run garbage collection for CPU
             with torch.no_grad():
                 result = self.pipe(*args, **kwargs)
             return {"result": numpy_to_std(result)}
         except Exception as e:
             if str(self.pipe.device) == "cuda":
                 torch.cuda.empty_cache()
+            gc.collect()  # Run garbage collection for CPU
             raise HTTPException(
                 status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=str(e)
             )
         finally:
             if str(self.pipe.device) == "cuda":
-                torch.cuda.empty_cache()  # Clear cache after processing
+                torch.cuda.empty_cache()  # Clear CUDA cache after processing
+            gc.collect()  # Run garbage collection for CPU
 
     @web_app.get("/model_config")
     def model_config(self):
@@ -90,6 +94,18 @@ class TransformersModelDeployment:
             "num_threads": torch.get_num_threads(),
             "ray_omp_num_threads": os.environ.get("OMP_NUM_THREADS", None),
         }
+
+    @web_app.post("/empty_cache")
+    def empty_cache(self):
+        if str(self.pipe.device) == "cuda":
+            torch.cuda.empty_cache()
+            gc.collect()  # Run garbage collection for CPU
+            return {
+                "message": "CUDA cache emptied and garbage collection performed successfully"
+            }
+        else:
+            gc.collect()  # Run garbage collection for CPU
+            return {"message": "Garbage collection performed successfully"}
 
 
 def app_builder(args: dict) -> Application:

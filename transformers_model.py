@@ -60,16 +60,20 @@ class TransformersModelDeployment:
     def infer(self, inference_request: InferenceRequest) -> dict:
         args = inference_request.args
         kwargs = inference_request.kwargs
+
         try:
+            if str(self.pipe.device) == "cuda":
+                torch.cuda.empty_cache()  # Clear cache before processing
             with torch.no_grad():
                 result = self.pipe(*args, **kwargs)
             return {"result": numpy_to_std(result)}
         except Exception as e:
+            if str(self.pipe.device) == "cuda":
+                torch.cuda.empty_cache()
             raise HTTPException(
                 status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=str(e)
             )
         finally:
-            del args, kwargs
             if str(self.pipe.device) == "cuda":
                 torch.cuda.empty_cache()  # Clear cache after processing
 

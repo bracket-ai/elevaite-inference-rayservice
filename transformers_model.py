@@ -53,6 +53,11 @@ class TransformersModelDeployment:
         # https://github.com/huggingface/transformers/blob/main/src/transformers/pipelines/base.py#L287-L290
         self.pipe = pipeline(**pipe_kwargs)
 
+    def _clear_cache(self):
+        if str(self.pipe.device) == "cuda":
+            torch.cuda.empty_cache()
+        gc.collect()
+
     @web_app.get("/model_device")
     def model_device(self) -> str:
         return str(self.pipe.device)
@@ -63,23 +68,17 @@ class TransformersModelDeployment:
         kwargs = inference_request.kwargs
 
         try:
-            if str(self.pipe.device) == "cuda":
-                torch.cuda.empty_cache()  # Clear CUDA cache before processing
-            gc.collect()  # Run garbage collection for CPU
+            self._clear_cache()
             with torch.no_grad():
                 result = self.pipe(*args, **kwargs)
             return {"result": numpy_to_std(result)}
         except Exception as e:
-            if str(self.pipe.device) == "cuda":
-                torch.cuda.empty_cache()
-            gc.collect()  # Run garbage collection for CPU
+            self._clear_cache()
             raise HTTPException(
                 status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=str(e)
             )
         finally:
-            if str(self.pipe.device) == "cuda":
-                torch.cuda.empty_cache()  # Clear CUDA cache after processing
-            gc.collect()  # Run garbage collection for CPU
+            self._clear_cache()
 
     @web_app.get("/model_config")
     def model_config(self):
@@ -97,15 +96,8 @@ class TransformersModelDeployment:
 
     @web_app.post("/empty_cache")
     def empty_cache(self):
-        if str(self.pipe.device) == "cuda":
-            torch.cuda.empty_cache()
-            gc.collect()  # Run garbage collection for CPU
-            return {
-                "message": "CUDA cache emptied and garbage collection performed successfully"
-            }
-        else:
-            gc.collect()  # Run garbage collection for CPU
-            return {"message": "Garbage collection performed successfully"}
+        self._clear_cache()
+        return {"message": "Cache cleared."}
 
 
 def app_builder(args: dict) -> Application:

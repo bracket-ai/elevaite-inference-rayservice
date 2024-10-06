@@ -32,6 +32,7 @@ class MiniCPMDeployment:
 
         if device not in ["cuda", "auto", "cpu"]:
             raise ValueError("device must be one of 'auto', 'cuda', or 'cpu'")
+
         if device == "auto":
             device = "cuda" if torch.cuda.is_available() else "cpu"
         elif device == "cuda" and not torch.cuda.is_available():
@@ -45,14 +46,13 @@ class MiniCPMDeployment:
         model_args = {
             "pretrained_model_name_or_path": model_path,
             "trust_remote_code": trust_remote_code,
-            "device": device,
         }
 
         if torch_dtype:
             model_args["torch_dtype"] = dtype_mapping.get(torch_dtype.lower(), None)
 
         model = AutoModel.from_pretrained(**model_args)
-
+        model = model.to(device)
         model = model.eval()
         self.model = model
 

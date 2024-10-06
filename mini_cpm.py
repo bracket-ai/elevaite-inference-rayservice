@@ -28,12 +28,10 @@ class MiniCPMDeployment:
         self.model_path = model_path
         self.task = task
         self.trust_remote_code = trust_remote_code
-        self.device = device
         self.torch_dtype = torch_dtype
 
         if device not in ["cuda", "auto", "cpu"]:
             raise ValueError("device must be one of 'auto', 'cuda', or 'cpu'")
-
         if device == "auto":
             device = "cuda" if torch.cuda.is_available() else "cpu"
         elif device == "cuda" and not torch.cuda.is_available():
@@ -42,16 +40,19 @@ class MiniCPMDeployment:
                 "for available resources."
             )
 
+        self.device = device
+
         model_args = {
-            "model_path": self.model_path,
-            "trust_remote_code": self.trust_remote_code,
-            "device": "cuda" if torch.cuda.is_available() else "cpu",
+            "pretrained_model_name_or_path": model_path,
+            "trust_remote_code": trust_remote_code,
+            "device": device,
         }
 
         if torch_dtype:
             model_args["torch_dtype"] = dtype_mapping.get(torch_dtype.lower(), None)
 
         model = AutoModel.from_pretrained(**model_args)
+
         model = model.eval()
         self.model = model
 

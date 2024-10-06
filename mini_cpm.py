@@ -43,7 +43,7 @@ class MiniCPMDeployment:
             )
 
         model_args = {
-            "model_name_or_path": self.model_path,
+            "model_path": self.model_path,
             "trust_remote_code": self.trust_remote_code,
             "device": "cuda" if torch.cuda.is_available() else "cpu",
         }

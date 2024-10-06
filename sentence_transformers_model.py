@@ -91,11 +91,6 @@ class SentenceTransformersModelDeployment:
             "ray_omp_num_threads": os.environ.get("OMP_NUM_THREADS", None),
         }
 
-    @web_app.post("/empty_cache")
-    def empty_cache(self):
-        self._clear_cache()
-        return {"message": "Cache cleared."}
-
 
 def app_builder(args: dict) -> Application:
     return SentenceTransformersModelDeployment.bind(  # type: ignore[attr-defined]

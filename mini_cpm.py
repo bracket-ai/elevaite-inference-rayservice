@@ -121,11 +121,6 @@ class MiniCPMDeployment:
             self._clear_cache()
             del kwargs
 
-    @web_app.post("/empty_cache")
-    def empty_cache(self):
-        self._clear_cache()
-        return {"message": "Cache cleared."}
-
     @web_app.get("/model_config")
     def model_config(self):
         return numpy_to_std(self.model.config.__dict__)

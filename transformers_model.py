@@ -52,6 +52,8 @@ class TransformersModelDeployment:
         # No need to call .eval() here, since pipeline does it for us
         # https://github.com/huggingface/transformers/blob/main/src/transformers/pipelines/base.py#L287-L290
         self.pipe = pipeline(**pipe_kwargs)
+        # Resize token embeddings to match the tokenizer
+        self.pipe.model.resize_token_embeddings(len(self.pipe.tokenizer))
 
     def _clear_cache(self):
         if str(self.pipe.device) == "cuda":

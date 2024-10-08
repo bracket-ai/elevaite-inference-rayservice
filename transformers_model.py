@@ -31,9 +31,7 @@ class TransformersModelDeployment:
         if device not in ["cuda", "auto", "cpu"]:
             raise ValueError("device must be one of 'auto', 'cuda', or 'cpu'")
 
-        if device == "auto":
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-        elif device == "cuda" and not torch.cuda.is_available():
+        if device == "cuda" and not torch.cuda.is_available():
             raise RuntimeError(
                 "CUDA was requested but is not available. Please check "
                 "for available resources."
@@ -43,14 +41,19 @@ class TransformersModelDeployment:
             "task": self.task,
             "model": self.model_path,
             "trust_remote_code": self.trust_remote_code,
-            "device": device,
         }
+
+        if device == "cuda":
+            pipe_kwargs["device_map"] = "auto"
+        elif device == "auto":
+            pipe_kwargs["device_map"] = "auto"
+        else:
+            pipe_kwargs["device"] = "cpu"
 
         if torch_dtype:
             pipe_kwargs["torch_dtype"] = dtype_mapping.get(torch_dtype.lower(), None)
 
-        # No need to call .eval() here, since pipeline does it for us
-        # https://github.com/huggingface/transformers/blob/main/src/transformers/pipelines/base.py#L287-L290
+        # Initialize the pipeline with device_map="auto"
         self.pipe = pipeline(**pipe_kwargs)
 
         # Resize token embeddings to match the tokenizer
@@ -65,13 +68,13 @@ class TransformersModelDeployment:
         self.pipe.model = self.pipe.model.eval()
 
     def _clear_cache(self):
-        if str(self.pipe.device) == "cuda":
+        if torch.cuda.is_available():
             torch.cuda.empty_cache()
         gc.collect()
 
     @web_app.get("/model_device")
     def model_device(self) -> str:
-        return str(self.pipe.device)
+        return str(next(self.pipe.model.parameters()).device)
 
     @web_app.post("/infer")
     def infer(self, inference_request: InferenceRequest) -> dict:

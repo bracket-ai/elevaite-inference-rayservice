@@ -80,7 +80,6 @@ class TransformersModelDeployment:
                 result = self.pipe(*args, **kwargs)
             return {"result": numpy_to_std(result)}
         except Exception as e:
-            self._clear_cache()
             raise HTTPException(
                 status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=str(e)
             )

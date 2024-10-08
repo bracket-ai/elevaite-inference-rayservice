@@ -1,4 +1,5 @@
 import gc
+import logging
 from http import HTTPStatus
 
 import torch.cuda
@@ -10,6 +11,12 @@ from transformers import pipeline
 from utils import InferenceRequest, dtype_mapping, numpy_to_std
 
 web_app = FastAPI()
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 
 @serve.deployment
@@ -23,15 +30,20 @@ class TransformersModelDeployment:
         device: str = "auto",
         torch_dtype: str | None = None,
     ):
+        logger.info(
+            f"Initializing TransformersModelDeployment with model_path={model_path}, task={task}, device={device}"
+        )
         self.model_path = model_path
         self.task = task
         self.trust_remote_code = trust_remote_code
         self.torch_dtype = torch_dtype
 
         if device not in ["cuda", "auto", "cpu"]:
+            logger.error(f"Invalid device specified: {device}")
             raise ValueError("device must be one of 'auto', 'cuda', or 'cpu'")
 
         if device == "cuda" and not torch.cuda.is_available():
+            logger.error("CUDA was requested but is not available")
             raise RuntimeError(
                 "CUDA was requested but is not available. Please check "
                 "for available resources."
@@ -53,6 +65,7 @@ class TransformersModelDeployment:
         if torch_dtype:
             pipe_kwargs["torch_dtype"] = dtype_mapping.get(torch_dtype.lower(), None)
 
+        logger.info(f"Initializing pipeline with kwargs: {pipe_kwargs}")
         # Initialize the pipeline with device_map="auto"
         self.pipe = pipeline(**pipe_kwargs)
 
@@ -61,36 +74,44 @@ class TransformersModelDeployment:
         self.pipe.model.resize_token_embeddings(len(self.pipe.tokenizer))
         new_embedding_size = self.pipe.model.get_input_embeddings().num_embeddings
         # Log the change in embedding size
-        print(
+        logger.info(
             f"Token embeddings size: initial={initial_embedding_size}, new={new_embedding_size}"
         )
 
         self.pipe.model = self.pipe.model.eval()
+        logger.info("Model initialization complete")
 
     def _clear_cache(self):
+        logger.debug("Clearing cache")
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
         gc.collect()
 
     @web_app.get("/model_device")
     def model_device(self) -> str:
-        return str(next(self.pipe.model.parameters()).device)
+        device = str(next(self.pipe.model.parameters()).device)
+        logger.info(f"Model device: {device}")
+        return device
 
     @web_app.post("/infer")
     def infer(self, inference_request: InferenceRequest) -> dict:
+        logger.info("Received inference request")
         args = inference_request.args
         kwargs = inference_request.kwargs
 
         try:
             self._clear_cache()
             with torch.no_grad():
+                logger.debug("Running inference")
                 result = self.pipe(*args, **kwargs)
 
             out = numpy_to_std(result)
             del result
             self._clear_cache()
+            logger.info("Inference completed successfully")
             return {"result": out}
         except Exception as e:
+            logger.error(f"Error during inference: {str(e)}", exc_info=True)
             self._clear_cache()
             raise HTTPException(
                 status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=str(e)
@@ -98,12 +119,14 @@ class TransformersModelDeployment:
 
     @web_app.get("/model_config")
     def model_config(self):
+        logger.info("Retrieving model config")
         return numpy_to_std(self.pipe.model.config.__dict__)
 
     @web_app.get("/get_num_threads")
     def get_num_threads(self):
         import os
 
+        logger.info("Retrieving thread information")
         return {
             "cpu_count": os.cpu_count(),
             "num_threads": torch.get_num_threads(),
@@ -112,6 +135,7 @@ class TransformersModelDeployment:
 
 
 def app_builder(args: dict) -> Application:
+    logger.info(f"Building application with args: {args}")
     return TransformersModelDeployment.bind(  # type: ignore[attr-defined]
         args["model_path"],
         args["task"],

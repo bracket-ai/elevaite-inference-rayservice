@@ -84,7 +84,19 @@ class TransformersModelDeployment:
     def _clear_cache(self):
         logger.info("Clearing cache")
         if torch.cuda.is_available():
+            logger.info(
+                f"GPU memory allocated before cache clear: {torch.cuda.memory_allocated() / 1e9} GB"
+            )
+            logger.info(
+                f"GPU memory reserved before cache clear: {torch.cuda.memory_reserved() / 1e9} GB"
+            )
             torch.cuda.empty_cache()
+            logger.info(
+                f"GPU memory allocated after cache clear: {torch.cuda.memory_allocated() / 1e9} GB"
+            )
+            logger.info(
+                f"GPU memory reserved after cache clear: {torch.cuda.memory_reserved() / 1e9} GB"
+            )
         gc.collect()
 
     @web_app.get("/model_device")

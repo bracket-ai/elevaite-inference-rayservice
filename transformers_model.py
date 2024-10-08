@@ -56,7 +56,7 @@ class TransformersModelDeployment:
         }
 
         if device == "cuda":
-            pipe_kwargs["device_map"] = "auto"
+            pipe_kwargs["device"] = 0  # Explicitly set to GPU index 0
         elif device == "auto":
             pipe_kwargs["device_map"] = "auto"
         else:

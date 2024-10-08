@@ -19,7 +19,7 @@ logging.basicConfig(
 logger = logging.getLogger("ray")
 
 
-@serve.deployment(max_concurrent_queries=1)
+@serve.deployment()
 @serve.ingress(web_app)
 class TransformersModelDeployment:
     def __init__(

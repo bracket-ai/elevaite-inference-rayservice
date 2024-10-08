@@ -62,6 +62,8 @@ class TransformersModelDeployment:
             f"Token embeddings size: initial={initial_embedding_size}, new={new_embedding_size}"
         )
 
+        self.pipe.model = self.pipe.model.eval()
+
     def _clear_cache(self):
         if str(self.pipe.device) == "cuda":
             torch.cuda.empty_cache()
@@ -80,8 +82,13 @@ class TransformersModelDeployment:
             self._clear_cache()
             with torch.no_grad():
                 result = self.pipe(*args, **kwargs)
-            return {"result": numpy_to_std(result)}
+
+            out = numpy_to_std(result)
+            del result
+            self._clear_cache()
+            return {"result": out}
         except Exception as e:
+            self._clear_cache()
             raise HTTPException(
                 status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=str(e)
             )

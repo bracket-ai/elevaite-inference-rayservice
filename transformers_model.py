@@ -19,7 +19,7 @@ logging.basicConfig(
 logger = logging.getLogger("ray")
 
 
-@serve.deployment
+@serve.deployment(max_concurrent_queries=1)
 @serve.ingress(web_app)
 class TransformersModelDeployment:
     def __init__(
@@ -82,7 +82,7 @@ class TransformersModelDeployment:
         logger.info("Model initialization complete")
 
     def _clear_cache(self):
-        logger.debug("Clearing cache")
+        logger.info("Clearing cache")
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
         gc.collect()
@@ -110,12 +110,26 @@ class TransformersModelDeployment:
 
         try:
             self._clear_cache()
+            if torch.cuda.is_available():
+                logger.info(
+                    f"GPU memory allocated before inference: {torch.cuda.memory_allocated() / 1e9} GB"
+                )
+                logger.info(
+                    f"GPU memory reserved before inference: {torch.cuda.memory_reserved() / 1e9} GB"
+                )
             with torch.no_grad():
                 logger.debug("Running inference")
                 result = self.pipe(*args, **kwargs)
+            if torch.cuda.is_available():
+                logger.info(
+                    f"GPU memory allocated after inference: {torch.cuda.memory_allocated() / 1e9} GB"
+                )
+                logger.info(
+                    f"GPU memory reserved after inference: {torch.cuda.memory_reserved() / 1e9} GB"
+                )
 
             out = numpy_to_std(result)
-            del result
+            del result, args, kwargs  # Delete variables
             self._clear_cache()
             logger.info("Inference completed successfully")
             return {"result": out}

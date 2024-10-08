@@ -93,6 +93,15 @@ class TransformersModelDeployment:
         logger.info(f"Model device: {device}")
         return device
 
+    @web_app.get("/model_device_map")
+    def model_device_map(self) -> dict:
+        logger.info("Retrieving model device map")
+        if hasattr(self.pipe.model, "hf_device_map"):
+            return self.pipe.model.hf_device_map
+        else:
+            logger.warning("Model does not have hf_device_map attribute")
+            return {"error": "Model does not have hf_device_map attribute"}
+
     @web_app.post("/infer")
     def infer(self, inference_request: InferenceRequest) -> dict:
         logger.info("Received inference request")

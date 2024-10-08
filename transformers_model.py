@@ -58,7 +58,9 @@ class TransformersModelDeployment:
         self.pipe.model.resize_token_embeddings(len(self.pipe.tokenizer))
         new_embedding_size = self.pipe.model.get_input_embeddings().num_embeddings
         # Log the change in embedding size
-        print(f"Token embeddings size: initial={initial_embedding_size}, new={new_embedding_size}")
+        print(
+            f"Token embeddings size: initial={initial_embedding_size}, new={new_embedding_size}"
+        )
 
     def _clear_cache(self):
         if str(self.pipe.device) == "cuda":
@@ -83,7 +85,7 @@ class TransformersModelDeployment:
             raise HTTPException(
                 status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=str(e)
             )
-        
+
     @web_app.get("/model_config")
     def model_config(self):
         return numpy_to_std(self.pipe.model.config.__dict__)

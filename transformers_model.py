@@ -78,7 +78,7 @@ class TransformersModelDeployment:
             f"Token embeddings size: initial={initial_embedding_size}, new={new_embedding_size}"
         )
 
-        self.pipe.model = self.pipe.model.eval()
+        self.pipe.model.eval()
         logger.info("Model initialization complete")
 
     def _clear_cache(self):
@@ -114,6 +114,13 @@ class TransformersModelDeployment:
             logger.warning("Model does not have hf_device_map attribute")
             return {"error": "Model does not have hf_device_map attribute"}
 
+    def _memory_summary(self):
+        logger.info("Retrieving CUDA memory summary")
+        if torch.cuda.is_available():
+            return torch.cuda.memory_summary()
+        else:
+            return "CUDA is not available on this system."
+
     @web_app.post("/infer")
     def infer(self, inference_request: InferenceRequest) -> dict:
         logger.info("Received inference request")
@@ -146,6 +153,14 @@ class TransformersModelDeployment:
             self._clear_cache()
             logger.info("Inference completed successfully")
             return {"result": out}
+        except torch.cuda.OutOfMemoryError as oom_error:
+            logger.error(f"CUDA out of memory error: {str(oom_error)}", exc_info=True)
+            logger.error(f"Memory summary:\n{self._memory_summary()}")
+            self._clear_cache()
+            raise HTTPException(
+                status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+                detail=f"CUDA out of memory error: {str(oom_error)}",
+            )
         except Exception as e:
             logger.error(f"Error during inference: {str(e)}", exc_info=True)
             self._clear_cache()
@@ -170,6 +185,10 @@ class TransformersModelDeployment:
             "PYTORCH_CUDA_ALLOC_CONF": os.environ.get("PYTORCH_CUDA_ALLOC_CONF", None),
             "CUDA_LAUNCH_BLOCKING": os.environ.get("CUDA_LAUNCH_BLOCKING", None),
         }
+
+    @web_app.get("/memory_summary")
+    def memory_summary(self):
+        return self._memory_summary()
 
 
 def app_builder(args: dict) -> Application:

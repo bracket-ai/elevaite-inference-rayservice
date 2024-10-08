@@ -131,15 +131,17 @@ class TransformersModelDeployment:
         logger.info("Retrieving model config")
         return numpy_to_std(self.pipe.model.config.__dict__)
 
-    @web_app.get("/get_num_threads")
+    @web_app.get("/compute_config")
     def get_num_threads(self):
         import os
 
         logger.info("Retrieving thread information")
         return {
-            "cpu_count": os.cpu_count(),
-            "num_threads": torch.get_num_threads(),
-            "ray_omp_num_threads": os.environ.get("OMP_NUM_THREADS", None),
+            "CPU_COUNT": os.cpu_count(),
+            "NUM_THREADS": torch.get_num_threads(),
+            "OMP_NUM_THREADS": os.environ.get("OMP_NUM_THREADS", None),
+            "PYTORCH_CUDA_ALLOC_CONF": os.environ.get("PYTORCH_CUDA_ALLOC_CONF", None),
+            "CUDA_LAUNCH_BLOCKING": os.environ.get("CUDA_LAUNCH_BLOCKING", None),
         }
 
 

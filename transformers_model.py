@@ -130,8 +130,9 @@ class TransformersModelDeployment:
                     f"GPU memory reserved before inference: {torch.cuda.memory_reserved() / 1e9} GB"
                 )
             with torch.no_grad():
-                logger.debug("Running inference")
+                logger.info("Running inference")
                 result = self.pipe(*args, **kwargs)
+                logger.info(f"Inference result: {result}")
             if torch.cuda.is_available():
                 logger.info(
                     f"GPU memory allocated after inference: {torch.cuda.memory_allocated() / 1e9} GB"

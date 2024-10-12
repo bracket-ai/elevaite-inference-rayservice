@@ -1,4 +1,3 @@
-import gc
 import json
 from http import HTTPStatus
 
@@ -23,7 +22,7 @@ class MiniCPMDeployment:
         task: str,
         trust_remote_code: bool,
         device: str = "auto",
-        torch_dtype: str | None = None,
+        torch_dtype: str = "float32",
     ):
         self.model_path = model_path
         self.task = task
@@ -46,10 +45,8 @@ class MiniCPMDeployment:
         model_args = {
             "pretrained_model_name_or_path": model_path,
             "trust_remote_code": trust_remote_code,
+            "torch_dtype": dtype_mapping.get(torch_dtype.lower()),
         }
-
-        if torch_dtype:
-            model_args["torch_dtype"] = dtype_mapping.get(torch_dtype.lower(), None)
 
         model = AutoModel.from_pretrained(**model_args)
         model = model.to(device)
@@ -60,24 +57,15 @@ class MiniCPMDeployment:
             model_path, trust_remote_code=True
         )
 
-    def _clear_cache(self):
-        if str(self.model.device) == "cuda":
-            torch.cuda.empty_cache()
-        gc.collect()
-
     @web_app.post("/image_infer")
     async def image_infer(
         self,
-        # Accept args and kwargs as JSON:
         image_files: list[UploadFile] = File([]),
         json_messages: str = Form(...),
         json_kwargs: str = Form(...),
     ):
-        # Deserialize the JSON string into a list of dictionaries
         try:
-            messages: list = json.loads(
-                json_messages
-            )  # Convert the JSON string to a list
+            messages: list = json.loads(json_messages)
             kwargs: dict = json.loads(json_kwargs)
         except json.JSONDecodeError:
             raise HTTPException(
@@ -86,7 +74,6 @@ class MiniCPMDeployment:
             )
 
         try:
-            self._clear_cache()
             kwargs["tokenizer"] = self.tokenizer
             processed_messages = []
             for message in messages:
@@ -114,13 +101,9 @@ class MiniCPMDeployment:
             with torch.no_grad():
                 return self.model.chat(**kwargs)
         except Exception as e:
-            self._clear_cache()
             raise HTTPException(
                 status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=str(e)
             )
-        finally:
-            self._clear_cache()
-            del kwargs
 
     @web_app.get("/model_config")
     def model_config(self):
@@ -129,16 +112,6 @@ class MiniCPMDeployment:
     @web_app.get("/model_device")
     def model_device(self) -> str:
         return str(self.model.device)
-
-    @web_app.get("/get_num_threads")
-    def get_num_threads(self):
-        import os
-
-        return {
-            "cpu_count": os.cpu_count(),
-            "num_threads": torch.get_num_threads(),
-            "ray_omp_num_threads": os.environ.get("OMP_NUM_THREADS", None),
-        }
 
 
 def app_builder(args: dict) -> Application:

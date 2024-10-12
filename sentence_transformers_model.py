@@ -1,4 +1,3 @@
-import gc
 from http import HTTPStatus
 
 import torch.cuda
@@ -20,7 +19,7 @@ class SentenceTransformersModelDeployment:
         model_path: str,
         trust_remote_code: bool,
         device: str = "auto",
-        torch_dtype: str | None = None,
+        torch_dtype: str = "float32",
     ):
         self.model_path = model_path
         self.trust_remote_code = trust_remote_code
@@ -56,11 +55,6 @@ class SentenceTransformersModelDeployment:
         self.model = SentenceTransformer(**model_args)
         self.model = self.model.eval()
 
-    def _clear_cache(self):
-        if str(self.model.device) == "cuda":
-            torch.cuda.empty_cache()
-        gc.collect()
-
     @web_app.get("/model_device")
     def model_device(self) -> str:
         return str(self.model.device)
@@ -70,26 +64,12 @@ class SentenceTransformersModelDeployment:
         args = inference_request.args
         kwargs = inference_request.kwargs
         try:
-            self._clear_cache()
             with torch.no_grad():
                 return {"result": numpy_to_std(self.model.encode(*args, **kwargs))}
         except Exception as e:
-            self._clear_cache()
             raise HTTPException(
                 status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=str(e)
             )
-        finally:
-            self._clear_cache()
-
-    @web_app.get("/get_num_threads")
-    def get_num_threads(self):
-        import os
-
-        return {
-            "cpu_count": os.cpu_count(),
-            "num_threads": torch.get_num_threads(),
-            "ray_omp_num_threads": os.environ.get("OMP_NUM_THREADS", None),
-        }
 
 
 def app_builder(args: dict) -> Application:

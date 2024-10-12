@@ -21,7 +21,7 @@ class TransformersModelDeployment:
         task: str,
         trust_remote_code: bool,
         device: str = "auto",
-        torch_dtype: str | None = None,
+        torch_dtype: str = "float32",
     ):
         self.model_path = model_path
         self.task = task
@@ -47,7 +47,7 @@ class TransformersModelDeployment:
         }
 
         if torch_dtype:
-            pipe_kwargs["torch_dtype"] = dtype_mapping.get(torch_dtype.lower(), None)
+            pipe_kwargs["torch_dtype"] = dtype_mapping.get(torch_dtype.lower())
 
         # No need to call .eval() here, since pipeline does it for us
         # https://github.com/huggingface/transformers/blob/main/src/transformers/pipelines/base.py#L287-L290
@@ -83,16 +83,6 @@ class TransformersModelDeployment:
     @web_app.get("/model_config")
     def model_config(self):
         return numpy_to_std(self.pipe.model.config.__dict__)
-
-    @web_app.get("/get_num_threads")
-    def get_num_threads(self):
-        import os
-
-        return {
-            "cpu_count": os.cpu_count(),
-            "num_threads": torch.get_num_threads(),
-            "ray_omp_num_threads": os.environ.get("OMP_NUM_THREADS", None),
-        }
 
 
 def app_builder(args: dict) -> Application:

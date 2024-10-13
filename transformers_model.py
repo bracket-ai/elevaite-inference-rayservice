@@ -68,17 +68,17 @@ class TransformersModelDeployment:
         kwargs = inference_request.kwargs
 
         try:
-            # self._clear_cache()
+            self._clear_cache()
             with torch.no_grad():
                 result = self.pipe(*args, **kwargs)
             return {"result": numpy_to_std(result)}
         except Exception as e:
-            # self._clear_cache()
+            self._clear_cache()
             raise HTTPException(
                 status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=str(e)
             )
-        # finally:
-        # self._clear_cache()
+        finally:
+            self._clear_cache()
 
     @web_app.get("/model_config")
     def model_config(self):

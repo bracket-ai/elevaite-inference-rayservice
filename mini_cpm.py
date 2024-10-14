@@ -59,7 +59,7 @@ class MiniCPMDeployment:
         )
 
     def _clear_cache(self):
-        if str(self.pipe.device) == "cuda":
+        if str(self.model.device) == "cuda":
             torch.cuda.empty_cache()
         gc.collect()
 

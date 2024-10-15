@@ -30,18 +30,14 @@ class MiniCPMDeployment:
         self.trust_remote_code = trust_remote_code
         self.torch_dtype = torch_dtype
 
-        if device not in ["cuda", "auto", "cpu"]:
-            raise ValueError("device must be one of 'auto', 'cuda', or 'cpu'")
+        if device not in ["cuda", "cpu"]:
+            raise ValueError("device must be one of 'cuda' or 'cpu'")
 
-        if device == "auto":
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-        elif device == "cuda" and not torch.cuda.is_available():
+        if device == "cuda" and not torch.cuda.is_available():
             raise RuntimeError(
                 "CUDA was requested but is not available. Please check "
                 "for available resources."
             )
-
-        self.device = device
 
         model_args = {
             "pretrained_model_name_or_path": model_path,

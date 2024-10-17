@@ -1,3 +1,4 @@
+import logging
 from http import HTTPStatus
 
 import torch.cuda
@@ -7,6 +8,8 @@ from ray.serve import Application
 from sentence_transformers import SentenceTransformer
 
 from utils import InferenceRequest, dtype_mapping, numpy_to_std
+
+logger = logging.getLogger("ray.serve")
 
 web_app = FastAPI()
 

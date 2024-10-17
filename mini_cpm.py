@@ -1,5 +1,6 @@
 import gc
 import json
+import logging
 from http import HTTPStatus
 
 import torch.cuda
@@ -10,6 +11,8 @@ from ray.serve import Application
 from transformers import AutoModel, AutoTokenizer
 
 from utils import dtype_mapping, numpy_to_std
+
+logger = logging.getLogger("ray.serve")
 
 web_app = FastAPI()
 

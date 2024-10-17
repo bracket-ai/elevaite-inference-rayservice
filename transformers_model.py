@@ -1,4 +1,3 @@
-import gc
 import logging
 from http import HTTPStatus
 
@@ -57,7 +56,6 @@ class TransformersModelDeployment:
     def _clear_cache(self):
         if str(self.pipe.device) == "cuda":
             torch.cuda.empty_cache()
-        gc.collect()
 
     @web_app.get("/model_device")
     def model_device(self) -> str:
@@ -75,9 +73,8 @@ class TransformersModelDeployment:
             return {"result": numpy_to_std(result)}
         except Exception as e:
             self._clear_cache()
-            raise HTTPException(
-                status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=str(e)
-            )
+            logger.error(f"Internal Server Error: {e}", exc_info=True)
+            raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR)
         finally:
             self._clear_cache()
 

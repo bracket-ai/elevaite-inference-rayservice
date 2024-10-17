@@ -1,4 +1,3 @@
-import gc
 import json
 import logging
 from http import HTTPStatus
@@ -60,7 +59,6 @@ class MiniCPMDeployment:
     def _clear_cache(self):
         if str(self.model.device) == "cuda":
             torch.cuda.empty_cache()
-        gc.collect()
 
     @web_app.post("/image_infer")
     async def image_infer(
@@ -108,9 +106,8 @@ class MiniCPMDeployment:
                 return self.model.chat(**kwargs)
         except Exception as e:
             self._clear_cache()
-            raise HTTPException(
-                status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=str(e)
-            )
+            logger.error(f"Internal Server Error: {e}", exc_info=True)
+            raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR)
         finally:
             self._clear_cache()
 

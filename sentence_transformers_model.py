@@ -67,9 +67,8 @@ class SentenceTransformersModelDeployment:
             with torch.no_grad():
                 return {"result": numpy_to_std(self.model.encode(*args, **kwargs))}
         except Exception as e:
-            raise HTTPException(
-                status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=str(e)
-            )
+            logger.error(f"Internal Server Error: {e}", exc_info=True)
+            raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR)
 
 
 def app_builder(args: dict) -> Application:

@@ -37,7 +37,7 @@ class SentenceTransformersModelDeployment:
                 "for available resources."
             )
 
-        model_args = {
+        sentence_transformers_kwargs = {
             "model_name_or_path": self.model_path,
             "trust_remote_code": self.trust_remote_code,
             "device": device,
@@ -50,9 +50,9 @@ class SentenceTransformersModelDeployment:
             )
 
         if model_kwargs:
-            model_args["model_kwargs"] = model_kwargs
+            sentence_transformers_kwargs["model_kwargs"] = model_kwargs
 
-        self.model = SentenceTransformer(**model_args)
+        self.model = SentenceTransformer(**sentence_transformers_kwargs)
         self.model = self.model.eval()
 
     @web_app.get("/model_device")

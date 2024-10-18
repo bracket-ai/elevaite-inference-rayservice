@@ -3,17 +3,15 @@ import logging
 from http import HTTPStatus
 
 import torch.cuda
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import File, Form, HTTPException, UploadFile
 from PIL import Image
 from ray import serve
 from ray.serve import Application
 from transformers import AutoModel, AutoTokenizer
 
-from utils import dtype_mapping, numpy_to_std
+from utils import dtype_mapping, numpy_to_std, web_app
 
 logger = logging.getLogger("ray.serve")
-
-web_app = FastAPI()
 
 
 @serve.deployment

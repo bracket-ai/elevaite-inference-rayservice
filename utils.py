@@ -3,7 +3,10 @@ from typing import Any, Dict, List
 
 import numpy as np
 import torch.cuda
+from fastapi import FastAPI
 from pydantic import BaseModel, Field
+
+web_app = FastAPI(root_path="/inference")
 
 
 def numpy_to_std(obj):

@@ -6,7 +6,7 @@ import torch.cuda
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
-web_app = FastAPI(root_path="/inference")
+web_app = FastAPI()
 
 
 def numpy_to_std(obj):

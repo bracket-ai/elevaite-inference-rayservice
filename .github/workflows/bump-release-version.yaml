@@ -1,0 +1,44 @@
+name: Version housekeeping
+
+on:
+  pull_request:
+    types: [ closed ]
+
+jobs:
+  bump-release:
+    if: github.base_ref == 'main' && github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    name: Bump version & push tag
+    permissions:
+      contents: write
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+
+      - name: Configure Git
+        run: |
+          git config --global user.name 'Bracket AI'
+          git config --global user.email 'bracket-ai@users.noreply.github.com'
+
+      - name: Make & push tag
+        run: |
+          export VERSION="$(poetry version -s)"
+          git tag $VERSION
+          git push origin tag $VERSION
+
+      - name: Bump version
+        run: |
+          poetry version patch
+
+      - name: Commit bumped version
+        run: |
+          git add pyproject.toml
+          git commit -am "Auto-bump version"
+          git push origin HEAD:${{ github.base_ref }}

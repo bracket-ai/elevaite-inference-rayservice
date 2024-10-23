@@ -1,2 +1,9 @@
+[tool.poetry]
+name = "elevaite-inference"
+version = "1.0.0"
+authors = ["Connor Boyle", "Korinayo Thompson"]
+description = "Inference working directory for ElevAIte"
+
+
 [tool.isort]
 profile = "black"

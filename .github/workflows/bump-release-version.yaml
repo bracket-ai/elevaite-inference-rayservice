@@ -8,7 +8,7 @@ jobs:
   bump-release:
     if: github.base_ref == 'main' && github.event.pull_request.merged == true
     runs-on: ubuntu-latest
-    name: Bump version & push tag
+    name: Push version tag
     permissions:
       contents: write
     env:
@@ -32,13 +32,3 @@ jobs:
           export VERSION="$(poetry version -s)"
           git tag $VERSION
           git push origin tag $VERSION
-
-      - name: Bump version
-        run: |
-          poetry version patch
-
-      - name: Commit bumped version
-        run: |
-          git add pyproject.toml
-          git commit -am "Auto-bump version"
-          git push origin HEAD:${{ github.base_ref }}

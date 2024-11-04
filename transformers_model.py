@@ -14,7 +14,17 @@ logger = logging.getLogger("ray.serve")
 web_app = FastAPI()
 
 
-@serve.deployment
+@serve.deployment(
+    ray_actor_options={"num_gpus": 0.2},  # Fractional GPU to allow multiple replicas per GPU
+    autoscaling_config={
+        "min_replicas": 0,
+        "initial_replicas": 0,
+        "max_replicas": 5,
+        "target_num_ongoing_requests_per_replica": 1,
+        "upscale_delay_s": 10,
+        "downscale_delay_s": 30,
+    }
+)
 @serve.ingress(web_app)
 class TransformersModelDeployment:
     def __init__(

@@ -18,11 +18,11 @@ web_app = FastAPI()
     ray_actor_options={"num_gpus": 0.2},  # Fractional GPU to allow multiple replicas per GPU
     autoscaling_config={
         "min_replicas": 0,
-        "initial_replicas": 0,
+        "initial_replicas": 1, # If you set initial_replicas to 0, it will just sit there on deploy, you'll have to explicitly remember to curl /inference/1 to trigger it, then wait for 0->1 upscaling
         "max_replicas": 5,
         "target_num_ongoing_requests_per_replica": 1,
         "upscale_delay_s": 10,
-        "downscale_delay_s": 30,
+        "downscale_delay_s": 600, # Keep alive for 10 minutes
     }
 )
 @serve.ingress(web_app)

@@ -67,6 +67,94 @@ class MiniCPMDeployment:
         json_messages: str = Form(...),
         json_kwargs: str = Form(...),
     ):
+        """
+        MiniCPM-V Model Deployment for multimodal vision-language tasks.
+
+        This endpoint processes images and text queries using the MiniCPM-V model, a lightweight 
+        multimodal model that can understand both images and text.
+
+        **Request Format:**
+        - `image_files`: Image files to process
+            ```
+            [image1.jpg, image2.jpg, ...]
+            ```
+        - `json_messages`: JSON array of messages in the format:
+            ```json
+            [
+                {
+                    "role": "user",
+                    "content": [
+                        "Look at these images:",
+                        0,  # Reference to first image
+                        1,  # Reference to second image
+                        "What's the difference between them?"
+                    ]
+                }
+            ]
+            ```
+        - `json_kwargs`: Additional parameters as JSON object
+            ```json
+            {"max_new_tokens": 50}
+            ```
+
+        **Example Python code:**
+        ```python
+        import requests
+        import json
+
+        URL = "<your_url>/model_id/image_infer"
+        username = "your_username"
+        password = "your_password"
+
+        files = []
+        for img_path in ['image_1.jpg', 'image_2.jpg']:
+            with open(img_path, 'rb') as f:
+                files.append(
+                    ('image_files', (img_path, f.read(), 'image/jpeg'))
+                )
+
+        messages = [
+            {
+                "type": "text",
+                "role": "user",
+                "content": [
+                    "Look at these images:", 0, 1, # indices of attached images to look at
+                    "What is the difference between them?"
+                ]
+            }
+        ]
+
+        kwargs = {"max_new_tokens": 50}
+
+        data = {
+            'json_messages': json.dumps(messages),
+            'json_kwargs': json.dumps(kwargs)
+        }
+
+        response = requests.post(
+            URL,
+            files=files,
+            data=data,  # Use data for the JSON strings
+            auth=(username, password),
+            verify=False
+        )
+
+        result = response.json()
+        ```
+
+        **Example curl command:**
+        ```bash
+        curl -X 'POST' \\
+            '<your_url>/model_id/image_infer' \\
+            -H 'accept: application/json' \\
+            -H 'Content-Type: multipart/form-data' \\
+            -F 'image_files=@image_1.jpg;type=image/jpeg' \\
+            -F 'image_files=@image_2.jpg;type=image/jpeg' \\
+            -F 'json_messages=[{"type": "text", "role": "user", "content": ["Look at these images:", 0, 1, "What is the difference between them?"]}]' \\
+            -F 'json_kwargs={}' \\
+            -u '<username>:<password>'
+        ```
+        """
         try:
             messages: list = json.loads(json_messages)
             kwargs: dict = json.loads(json_kwargs)

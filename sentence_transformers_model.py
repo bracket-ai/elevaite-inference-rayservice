@@ -61,6 +61,63 @@ class SentenceTransformersModelDeployment:
 
     @web_app.post("/infer")
     def infer(self, inference_request: InferenceRequest) -> dict:
+        """
+        **Request Format:**
+        ```json
+        {
+            "args": ["This is a sentence to embed"],
+            "kwargs": {}
+        }
+        ```
+
+        **Batch Processing:**
+        ```json
+        {
+            "args": [["First sentence", "Second sentence"]],
+            "kwargs": {}
+        }
+        ```
+
+         **Example Python code:**
+        ```python
+        import requests
+
+        url = "<URL>/<model_id>/infer"
+        payload = {
+            "args": ["This is a sentence to embed"],
+            "kwargs": {}
+        }
+        headers = {"Content-Type": "application/json"}
+        
+        # Basic authentication credentials
+        username = "your_username"
+        password = "your_password"
+
+        response = requests.post(
+            url, 
+            json=payload, 
+            headers=headers,
+            auth=(username, password),
+        )
+        result = response.json()
+        ```
+
+        **Example curl commands:**
+
+        Single text embedding:
+        ```bash
+        curl -X POST "<URL>/<model_id>/infer" \\
+        -H "Content-Type: application/json" \\
+        -d '{"args": ["This is a sentence to embed"], "kwargs": {}}'
+        ```
+
+        Batch text embedding:
+        ```bash 
+        curl -X POST "<URL>/<model_id>/infer" \\
+        -H "Content-Type: application/json" \\
+        -d '{"args": [["First sentence", "Second sentence"]], "kwargs": {}}'
+        ```
+        """
         args = inference_request.args
         kwargs = inference_request.kwargs
         try:

@@ -71,14 +71,12 @@ class LlamaVisionDeployment:
         json_kwargs: str = Form(...),
     ):
         """
-        Llama Vision endpoint for multimodal vision-language tasks.
-
         **Request Format:**
         Form data with:
         - image_files: List of image files (JPG, PNG supported)
         - json_messages: JSON string containing conversation messages in the format:
             [
-                {"role": "user", "content": "What is in this image?"}, 
+                {"role": "user", "content": "What is in this image?"},
                 {"role": "assistant", "content": "I see..."},
                 ...
             ]
@@ -95,7 +93,7 @@ class LlamaVisionDeployment:
         import json
 
         URL = "<URL>/llama/llamavisiondeployment/image_infer"
-        
+
         messages = [
             {"role": "user", "content": [
                 {"type": "image"},
@@ -110,7 +108,7 @@ class LlamaVisionDeployment:
                 # image_file: (filename, fileobj, content_type)
                 'image_file': ('image_1.jpg', f.read(), 'image/jpeg')
             }
-            
+
             # Send JSON data as form fields, not files
             data = {
                 'json_messages': json.dumps(messages),

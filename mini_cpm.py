@@ -68,11 +68,6 @@ class MiniCPMDeployment:
         json_kwargs: str = Form(...),
     ):
         """
-        MiniCPM-V Model Deployment for multimodal vision-language tasks.
-
-        This endpoint processes images and text queries using the MiniCPM-V model, a lightweight 
-        multimodal model that can understand both images and text.
-
         **Request Format:**
         - `image_files`: Image files to process
             ```

@@ -64,8 +64,6 @@ class TransformersModelDeployment:
     @web_app.post("/infer")
     def infer(self, inference_request: InferenceRequest) -> dict:
         """
-        This endpoint processes text input using a Transformers model for text generation.
-
         **Request Format:**
         ```json
         {
@@ -87,7 +85,7 @@ class TransformersModelDeployment:
         import requests
 
         url = "<URL>/<model_id>/infer"
-        
+
         # Single text generation
         payload = {
             "args": ["Help me write a poem that rhymes"],
@@ -107,13 +105,13 @@ class TransformersModelDeployment:
         }
 
         headers = {"Content-Type": "application/json"}
-        
+
         # Basic authentication credentials
         username = "your_username"
         password = "your_password"
 
         response = requests.post(
-            url, 
+            url,
             json=payload,  # or batch_payload
             headers=headers,
             auth=(username, password),

@@ -78,7 +78,7 @@ class SentenceTransformersModelDeployment:
         }
         ```
 
-         **Example Python code:**
+        **Example Python code:**
         ```python
         import requests
 
@@ -88,14 +88,14 @@ class SentenceTransformersModelDeployment:
             "kwargs": {}
         }
         headers = {"Content-Type": "application/json"}
-        
+
         # Basic authentication credentials
         username = "your_username"
         password = "your_password"
 
         response = requests.post(
-            url, 
-            json=payload, 
+            url,
+            json=payload,
             headers=headers,
             auth=(username, password),
         )
@@ -112,7 +112,7 @@ class SentenceTransformersModelDeployment:
         ```
 
         Batch text embedding:
-        ```bash 
+        ```bash
         curl -X POST "<URL>/<model_id>/infer" \\
         -H "Content-Type: application/json" \\
         -d '{"args": [["First sentence", "Second sentence"]], "kwargs": {}}'

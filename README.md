@@ -26,6 +26,3 @@ curl -X 'POST'   'http://localhost:8000/infer'   -H 'accept: application/json'  
 
 Or navigate to [localhost:8000/docs](http://localhost:8000/docs). The Ray dashboard can be found
 at [localhost:8265](http://localhost:8265)
-
-
-

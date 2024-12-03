@@ -70,6 +70,83 @@ class LlamaVisionDeployment:
         json_messages: str = Form(...),
         json_kwargs: str = Form(...),
     ):
+        """
+        **Request Format:**
+        Form data with:
+        - image_files: List of image files (JPG, PNG supported)
+        - json_messages: JSON string containing conversation messages in the format:
+            [
+                {"role": "user", "content": "What is in this image?"},
+                {"role": "assistant", "content": "I see..."},
+                ...
+            ]
+        - json_kwargs: JSON string containing additional generation parameters like:
+            {
+                "max_new_tokens": 512,
+                "temperature": 0.7,
+                "do_sample": true
+            }
+
+        **Example Python code:**
+        ```python
+        import requests
+        import json
+
+        URL = "<URL>/llama/llamavisiondeployment/image_infer"
+
+        messages = [
+            {"role": "user", "content": [
+                {"type": "image"},
+                {"type": "text", "text": "What is in this image?"}
+            ]}
+        ]
+
+        kwargs = {"max_new_tokens": 50}
+
+        with open('../image_1.jpg', 'rb') as f:
+            files = {
+                # image_file: (filename, fileobj, content_type)
+                'image_file': ('image_1.jpg', f.read(), 'image/jpeg')
+            }
+
+            # Send JSON data as form fields, not files
+            data = {
+                'json_messages': json.dumps(messages),
+                'json_kwargs': json.dumps(kwargs)
+            }
+
+        response = requests.post(
+            URL,
+            files=files,
+            data=data,  # Use data for the JSON strings
+            auth=(username, password),
+            verify=False
+        )
+
+        result = response.json()
+        ```
+
+        **Example curl commands:**
+
+        Single image analysis:
+        ```bash
+        curl -X POST http://localhost:8000/llama/llamavisiondeployment/image_chat \\
+            -u "your_username:your_password" \\
+            -F "image_files=@image1.jpg" \\
+            -F 'json_messages=[{"role":"user","content":"What is in this image?"}]' \\
+            -F 'json_kwargs={"max_new_tokens":512,"temperature":0.7}'
+        ```
+
+        Multiple images:
+        ```bash
+        curl -X POST http://localhost:8000/llama/llamavisiondeployment/image_chat \\
+            -u "your_username:your_password" \\
+            -F "image_files=@image1.jpg" \\
+            -F "image_files=@image2.jpg" \\
+            -F 'json_messages=[{"role":"user","content":"Compare these two images"}]' \\
+            -F 'json_kwargs={"max_new_tokens":512,"temperature":0.7}'
+        ```
+        """
         self._clear_cache()
 
         try:

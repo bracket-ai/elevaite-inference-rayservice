@@ -63,6 +63,87 @@ class TransformersModelDeployment:
 
     @web_app.post("/infer")
     def infer(self, inference_request: InferenceRequest) -> dict:
+        """
+        **Request Format:**
+        ```json
+        {
+            "args": ["Help me write a poem that rhymes"],
+            "kwargs": {"do_sample": false, "max_new_tokens": 50}
+        }
+        ```
+
+        **Batch Processing:**
+        ```json
+        {
+            "args": [["Write a haiku", "Write a limerick"]],
+            "kwargs": {"do_sample": false, "max_new_tokens": 50}
+        }
+        ```
+
+        **Example Python code:**
+        ```python
+        import requests
+
+        url = "<URL>/<model_id>/infer"
+
+        # Single text generation
+        payload = {
+            "args": ["Help me write a poem that rhymes"],
+            "kwargs": {
+                "do_sample": False,
+                "max_new_tokens": 50
+            }
+        }
+
+        # Or batch text generation
+        batch_payload = {
+            "args": [["Write a haiku", "Write a limerick"]],
+            "kwargs": {
+                "do_sample": False,
+                "max_new_tokens": 50
+            }
+        }
+
+        headers = {"Content-Type": "application/json"}
+
+        # Basic authentication credentials
+        username = "your_username"
+        password = "your_password"
+
+        response = requests.post(
+            url,
+            json=payload,  # or batch_payload
+            headers=headers,
+            auth=(username, password),
+        )
+        result = response.json()
+        ```
+
+        **Example curl commands:**
+
+        Single generation:
+        ```bash
+        curl -X POST "<URL>/<model_id>/infer" \
+        -H "Content-Type: application/json" \
+        -u <username>:<password> \
+        -d '{
+            "args": ["Help me write a poem that rhymes"],
+            "kwargs": {"do_sample": false, "max_new_tokens": 50}
+        }'
+        ```
+
+        Batch generation:
+        ```bash
+        curl -X POST "<URL>/<model_id>/infer" \
+        -H "Content-Type: application/json" \
+        -u <username>:<password> \
+        -d '{
+            "args": [["Write a haiku", "Write a limerick"]],
+            "kwargs": {"do_sample": false, "max_new_tokens": 50}
+        }'
+        ```
+        """
+
         args = inference_request.args
         kwargs = inference_request.kwargs
 

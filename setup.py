@@ -9,6 +9,7 @@ setup(
     install_requires=[
         "ray[serve]>=2.37.0",
         "transformers>=4.45.1",
+        "sentence-transformers>=2.7.0",
         "torch>=2.4.1",
         "fastapi>=0.115.0",
         "numpy>=2.1.1",

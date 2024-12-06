@@ -8,7 +8,8 @@ from PIL import Image
 from ray import serve
 from ray.serve import Application
 from transformers import AutoProcessor, MllamaForConditionalGeneration
-from utils import dtype_mapping, numpy_to_std
+
+from .utils import dtype_mapping, numpy_to_std
 
 logger = logging.getLogger("ray.serve")
 

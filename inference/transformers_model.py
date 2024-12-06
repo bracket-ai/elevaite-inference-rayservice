@@ -75,83 +75,112 @@ class TransformersModelDeployment:
     @web_app.post("/infer")
     def infer(self, inference_request: InferenceRequest) -> dict:
         """
+        Perform inference using the model pipeline. Supports both text generation and chat completion
+        with single, serial, and batch processing options.
+
         **Request Format:**
+        The endpoint expects a JSON request with `args` (input data) and `kwargs` (generation parameters):
         ```json
         {
-            "args": ["Help me write a poem that rhymes"],
-            "kwargs": {"do_sample": false, "max_new_tokens": 50}
+            "args": [...],     # Input data
+            "kwargs": {        # Generation parameters
+                "do_sample": false,
+                "max_new_tokens": 50,
+                "batch_size": 4  # Optional, for batch processing
+            }
         }
         ```
 
-        **Batch Processing:**
+        **Examples:**
+
+        1. Single Text Generation:
         ```json
         {
-            "args": [["Write a haiku", "Write a limerick"]],
-            "kwargs": {"do_sample": false, "max_new_tokens": 50}
+            "args": ["Write a poem"],
+            "kwargs": {
+                "do_sample": false,
+                "max_new_tokens": 50
+            }
         }
         ```
 
-        **Example Python code:**
+        2. Multiple Text Generation (Serial/Batch):
+        ```json
+        {
+            "args": [["Write a haiku", "Write a song"]],
+            "kwargs": {
+                "do_sample": false,
+                "max_new_tokens": 50,
+                "batch_size": 4  # Optional, enables batch processing
+            }
+        }
+        ```
+
+        3. Single Chat Completion:
+        ```json
+        {
+            "args": [[
+                {"role": "system", "content": "You are a helpful assistant"},
+                {"role": "user", "content": "Hello!"}
+            ]],
+            "kwargs": {
+                "do_sample": false,
+                "max_new_tokens": 50
+            }
+        }
+        ```
+
+        4. Multiple Chat Completion (Serial/Batch):
+        ```json
+        {
+            "args": [[
+                [
+                    {"role": "system", "content": "You are a helpful assistant"},
+                    {"role": "user", "content": "Hello!"}
+                ],
+                [
+                    {"role": "system", "content": "You are a pirate"},
+                    {"role": "user", "content": "Hello!"}
+                ]
+            ]],
+            "kwargs": {
+                "do_sample": false,
+                "max_new_tokens": 50,
+                "batch_size": 2  # Optional, enables batch processing
+            }
+        }
+        ```
+
+        **Notes:**
+        - Chat inputs must be properly nested within lists
+        - Batch processing is controlled via the optional `batch_size` parameter
+        - Memory usage scales with batch size
+
+        **Example Python request:**
         ```python
         import requests
 
-        url = "<URL>/<model_id>/infer"
-
-        # Single text generation
-        payload = {
-            "args": ["Help me write a poem that rhymes"],
-            "kwargs": {
-                "do_sample": False,
-                "max_new_tokens": 50
-            }
-        }
-
-        # Or batch text generation
-        batch_payload = {
-            "args": [["Write a haiku", "Write a limerick"]],
-            "kwargs": {
-                "do_sample": False,
-                "max_new_tokens": 50
-            }
-        }
-
+        url = "http://localhost:8000/infer"
         headers = {"Content-Type": "application/json"}
 
-        # Basic authentication credentials
-        username = "your_username"
-        password = "your_password"
+        # Replace with any request JSON from examples above
+        request = {
+            "args": ["Write a poem"],
+            "kwargs": {
+                "do_sample": False,
+                "max_new_tokens": 50
+            }
+        }
 
-        response = requests.post(
-            url,
-            json=payload,  # or batch_payload
-            headers=headers,
-            auth=(username, password),
-        )
+        response = requests.post(url, json=request, headers=headers)
         result = response.json()
         ```
 
-        **Example curl commands:**
-
-        Single generation:
+        **Example curl request:**
         ```bash
-        curl -X POST "<URL>/<model_id>/infer" \
+        curl -X POST "http://localhost:8000/infer" \
         -H "Content-Type: application/json" \
-        -u <username>:<password> \
-        -d '{
-            "args": ["Help me write a poem that rhymes"],
-            "kwargs": {"do_sample": false, "max_new_tokens": 50}
-        }'
-        ```
-
-        Batch generation:
-        ```bash
-        curl -X POST "<URL>/<model_id>/infer" \
-        -H "Content-Type: application/json" \
-        -u <username>:<password> \
-        -d '{
-            "args": [["Write a haiku", "Write a limerick"]],
-            "kwargs": {"do_sample": false, "max_new_tokens": 50}
-        }'
+        -d '<REPLACE_WITH_REQUEST_JSON_FROM_EXAMPLES_ABOVE>'
         ```
         """
 

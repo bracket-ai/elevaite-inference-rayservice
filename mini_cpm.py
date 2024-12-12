@@ -194,6 +194,25 @@ class MiniCPMDeployment:
         finally:
             self._clear_cache()
 
+    @web_app.get("/health")
+    def check_health(self):
+        """Simple health check endpoint that tests basic model functionality"""
+        try:
+            self._clear_cache()
+            kwargs = {
+                "tokenizer": self.tokenizer,
+                "msgs": [{"role": "user", "content": "Is this thing on?"}],
+                "max_new_tokens": 10,
+            }
+            with torch.no_grad():
+                return self.model.chat(**kwargs)
+        except Exception as e:
+            self._clear_cache()
+            logger.error(f"Health check failed: {e}", exc_info=True)
+            raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR)
+        finally:
+            self._clear_cache()
+
     @web_app.get("/model_config")
     def model_config(self):
         return numpy_to_std(self.model.config.__dict__)

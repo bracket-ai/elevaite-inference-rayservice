@@ -163,6 +163,10 @@ class TransformersModelDeployment:
     def model_config(self):
         return numpy_to_std(self.pipe.model.config.__dict__)
 
+    def check_health(self):
+        # Should raise an error if this simple call fails
+        self.pipe("Is this thing on?")
+
 
 def app_builder(args: dict) -> Application:
     return TransformersModelDeployment.bind(  # type: ignore[attr-defined]

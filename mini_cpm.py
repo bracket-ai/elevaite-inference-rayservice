@@ -199,13 +199,13 @@ class MiniCPMDeployment:
         """Simple health check endpoint that tests basic model functionality"""
         try:
             self._clear_cache()
-            kwargs = {
-                "tokenizer": self.tokenizer,
-                "msgs": [{"role": "user", "content": "Is this thing on?"}],
-                "max_new_tokens": 10,
-            }
             with torch.no_grad():
-                self.model.chat(**kwargs)
+                self.model.chat(
+                    image=None,
+                    msgs=[{"role": "user", "content": "Is this thing on?"}],
+                    tokenizer=self.tokenizer,
+                    max_new_tokens=10,
+                )
 
             logger.info("Health check passed")
             return {"status": "healthy"}

@@ -194,6 +194,21 @@ class LlamaVisionDeployment:
     def model_device(self) -> str:
         return str(self.model.device)
 
+    @web_app.get("/health")
+    def check_health(self):
+
+        inputs = self.processor.apply_chat_template(
+            [{"role": "user", "content": "Is this thing on?"}],
+            add_special_tokens=False,
+            add_generation_prompt=False,
+        )
+
+        kwargs = {"max_new_tokens": 10}
+
+        self.model.generate(inputs, **kwargs)
+
+        return {"status": "healthy"}
+
 
 def app_builder(args: dict) -> Application:
     return LlamaVisionDeployment.bind(  # type: ignore[attr-defined]

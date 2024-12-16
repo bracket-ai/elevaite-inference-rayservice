@@ -127,9 +127,12 @@ class SentenceTransformersModelDeployment:
             logger.error(f"Internal Server Error: {e}", exc_info=True)
             raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR)
 
+    @web_app.get("/health")
     def check_health(self):
         # Should raise an error if this simple call fails
         self.model.encode("Is this thing on?")
+        logger.info("Health check passed")
+        return {"status": "healthy"}
 
 
 def app_builder(args: dict) -> Application:

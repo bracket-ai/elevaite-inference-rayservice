@@ -163,9 +163,12 @@ class TransformersModelDeployment:
     def model_config(self):
         return numpy_to_std(self.pipe.model.config.__dict__)
 
+    @web_app.get("/health")
     def check_health(self):
         # Should raise an error if this simple call fails
         self.pipe("Is this thing on?")
+        logger.info("Health check passed")
+        return {"status": "healthy"}
 
 
 def app_builder(args: dict) -> Application:

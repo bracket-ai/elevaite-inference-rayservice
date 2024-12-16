@@ -205,7 +205,10 @@ class MiniCPMDeployment:
                 "max_new_tokens": 10,
             }
             with torch.no_grad():
-                return self.model.chat(**kwargs)
+                self.model.chat(**kwargs)
+
+            logger.info("Health check passed")
+            return {"status": "healthy"}
         except Exception as e:
             self._clear_cache()
             logger.error(f"Health check failed: {e}", exc_info=True)

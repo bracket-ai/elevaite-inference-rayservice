@@ -14,7 +14,7 @@ logger = logging.getLogger("ray.serve")
 web_app = FastAPI()
 
 
-@serve.deployment
+@serve.deployment(health_check_period_s=30)
 @serve.ingress(web_app)
 class SentenceTransformersModelDeployment:
     def __init__(

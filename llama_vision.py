@@ -196,18 +196,31 @@ class LlamaVisionDeployment:
 
     @web_app.get("/health")
     def check_health(self):
+        """Health check that verifies basic model functionality."""
+        try:
+            self._clear_cache()
 
-        inputs = self.processor.apply_chat_template(
-            [{"role": "user", "content": "Is this thing on?"}],
-            add_special_tokens=False,
-            add_generation_prompt=False,
-        )
+            # Basic inference test
+            with torch.no_grad():
+                test_input = self.processor.apply_chat_template(
+                    [{"role": "user", "content": "Is this thing on?"}],
+                    add_special_tokens=False,
+                    add_generation_prompt=False,
+                )
+                self.model.generate(test_input, max_new_tokens=10)
 
-        kwargs = {"max_new_tokens": 10}
+            logger.info("Health check passed")
+            return {"status": "healthy"}
 
-        self.model.generate(inputs, **kwargs)
-
-        return {"status": "healthy"}
+        except Exception as e:
+            self._clear_cache()
+            logger.error(f"Health check failed: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+                detail="Endpoint is unhealthy. Basic model.generate() call failed.",
+            )
+        finally:
+            self._clear_cache()
 
 
 def app_builder(args: dict) -> Application:

@@ -212,7 +212,10 @@ class MiniCPMDeployment:
         except Exception as e:
             self._clear_cache()
             logger.error(f"Health check failed: {e}", exc_info=True)
-            raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR)
+            raise HTTPException(
+                status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+                detail="Endpoint is unhealthy. Basic model.chat() call failed.",
+            )
         finally:
             self._clear_cache()
 

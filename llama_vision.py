@@ -208,7 +208,10 @@ class LlamaVisionDeployment:
                 )
 
                 inputs = self.processor(
-                    test_input, add_special_tokens=False, return_tensors="pt"
+                    None,
+                    test_input,
+                    add_special_tokens=False,
+                    return_tensors="pt",
                 ).to(self.model.device)
 
                 self.model.generate(inputs, max_new_tokens=10)

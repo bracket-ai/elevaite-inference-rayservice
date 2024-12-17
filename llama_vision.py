@@ -204,10 +204,14 @@ class LlamaVisionDeployment:
             with torch.no_grad():
                 test_input = self.processor.apply_chat_template(
                     [{"role": "user", "content": "Is this thing on?"}],
-                    add_special_tokens=False,
                     add_generation_prompt=False,
                 )
-                self.model.generate(test_input, max_new_tokens=10)
+
+                inputs = self.processor(
+                    test_input, add_special_tokens=False, return_tensors="pt"
+                ).to(self.model.device)
+
+                self.model.generate(inputs, max_new_tokens=10)
 
             logger.info("Health check passed")
             return {"status": "healthy"}

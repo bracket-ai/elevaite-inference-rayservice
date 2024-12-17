@@ -165,10 +165,26 @@ class TransformersModelDeployment:
 
     @web_app.get("/health")
     def check_health(self):
-        # Should raise an error if this simple call fails
-        self.pipe("Is this thing on?")
-        logger.info("Health check passed")
-        return {"status": "healthy"}
+        """Health check that verifies basic model functionality."""
+        try:
+            self._clear_cache()
+
+            # Basic inference test
+            with torch.no_grad():
+                self.pipe("Is this thing on?", max_new_tokens=10)
+
+            logger.info("Health check passed")
+            return {"status": "healthy"}
+
+        except Exception as e:
+            self._clear_cache()
+            logger.error(f"Health check failed: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+                detail="Endpoint is unhealthy. Basic model.pipe() call failed.",
+            )
+        finally:
+            self._clear_cache()
 
 
 def app_builder(args: dict) -> Application:

@@ -207,14 +207,13 @@ class LlamaVisionDeployment:
                     add_generation_prompt=False,
                 )
 
-                inputs = self.processor(
-                    None,
+                inputs = self.processor.tokenizer(
                     test_input,
-                    add_special_tokens=False,
                     return_tensors="pt",
+                    add_special_tokens=False,
                 ).to(self.model.device)
 
-                self.model.generate(inputs, max_new_tokens=10)
+                self.model.generate(**inputs, max_new_tokens=10)
 
             logger.info("Health check passed")
             return {"status": "healthy"}

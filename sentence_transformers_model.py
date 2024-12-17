@@ -129,10 +129,21 @@ class SentenceTransformersModelDeployment:
 
     @web_app.get("/health")
     def check_health(self):
-        # Should raise an error if this simple call fails
-        self.model.encode("Is this thing on?")
-        logger.info("Health check passed")
-        return {"status": "healthy"}
+        """Health check that verifies basic model functionality."""
+        try:
+            # Basic inference test
+            with torch.no_grad():
+                self.model.encode("Is this thing on?")
+
+            logger.info("Health check passed")
+            return {"status": "healthy"}
+
+        except Exception as e:
+            logger.error(f"Health check failed: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+                detail="Endpoint is unhealthy. Basic model.encode() call failed.",
+            )
 
 
 def app_builder(args: dict) -> Application:

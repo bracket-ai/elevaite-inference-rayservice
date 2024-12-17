@@ -207,6 +207,7 @@ class LlamaVisionDeployment:
                     add_generation_prompt=False,
                 )
 
+                # When only text is provided, use the tokenizer, not the processor
                 inputs = self.processor.tokenizer(
                     test_input,
                     return_tensors="pt",

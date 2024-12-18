@@ -14,7 +14,7 @@ logger = logging.getLogger("ray.serve")
 web_app = FastAPI()
 
 
-@serve.deployment
+@serve.deployment(health_check_period_s=30)
 @serve.ingress(web_app)
 class TransformersModelDeployment:
     def __init__(
@@ -162,6 +162,32 @@ class TransformersModelDeployment:
     @web_app.get("/model_config")
     def model_config(self):
         return numpy_to_std(self.pipe.model.config.__dict__)
+
+    @web_app.get("/health")
+    def check_health(self):
+        """Health check that verifies basic model functionality."""
+        try:
+            self._clear_cache()
+
+            # Basic inference test
+            with torch.no_grad():
+                if self.task == "text-generation":
+                    self.pipe("Is this thing on?", max_new_tokens=10)
+                else:
+                    self.pipe("Is this thing on?")
+
+            logger.info("Health check passed")
+            return {"status": "healthy"}
+
+        except Exception as e:
+            self._clear_cache()
+            logger.error(f"Health check failed: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+                detail="Endpoint is unhealthy. Basic model.pipe() call failed.",
+            )
+        finally:
+            self._clear_cache()
 
 
 def app_builder(args: dict) -> Application:

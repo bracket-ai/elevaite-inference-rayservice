@@ -16,7 +16,7 @@ logger = logging.getLogger("ray.serve")
 web_app = FastAPI()
 
 
-@serve.deployment
+@serve.deployment(health_check_period_s=30)
 @serve.ingress(web_app)
 class MiniCPMDeployment:
     def __init__(
@@ -191,6 +191,31 @@ class MiniCPMDeployment:
             self._clear_cache()
             logger.error(f"Internal Server Error: {e}", exc_info=True)
             raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR)
+        finally:
+            self._clear_cache()
+
+    @web_app.get("/health")
+    def check_health(self):
+        """Simple health check endpoint that tests basic model functionality"""
+        try:
+            self._clear_cache()
+            with torch.no_grad():
+                self.model.chat(
+                    image=None,
+                    msgs=[{"role": "user", "content": "Is this thing on?"}],
+                    tokenizer=self.tokenizer,
+                    max_new_tokens=10,
+                )
+
+            logger.info("Health check passed")
+            return {"status": "healthy"}
+        except Exception as e:
+            self._clear_cache()
+            logger.error(f"Health check failed: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+                detail="Endpoint is unhealthy. Basic model.chat() call failed.",
+            )
         finally:
             self._clear_cache()
 

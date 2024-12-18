@@ -171,7 +171,10 @@ class TransformersModelDeployment:
 
             # Basic inference test
             with torch.no_grad():
-                self.pipe("Is this thing on?")
+                if self.task == "text-generation":
+                    self.pipe("Is this thing on?", max_new_tokens=10)
+                else:
+                    self.pipe("Is this thing on?")
 
             logger.info("Health check passed")
             return {"status": "healthy"}

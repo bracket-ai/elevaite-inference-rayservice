@@ -14,7 +14,7 @@ logger = logging.getLogger("ray.serve")
 web_app = FastAPI()
 
 
-@serve.deployment
+@serve.deployment(health_check_period_s=30)
 @serve.ingress(web_app)
 class SentenceTransformersModelDeployment:
     def __init__(
@@ -126,6 +126,24 @@ class SentenceTransformersModelDeployment:
         except Exception as e:
             logger.error(f"Internal Server Error: {e}", exc_info=True)
             raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR)
+
+    @web_app.get("/health")
+    def check_health(self):
+        """Health check that verifies basic model functionality."""
+        try:
+            # Basic inference test
+            with torch.no_grad():
+                self.model.encode("Is this thing on?")
+
+            logger.info("Health check passed")
+            return {"status": "healthy"}
+
+        except Exception as e:
+            logger.error(f"Health check failed: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+                detail="Endpoint is unhealthy. Basic model.encode() call failed.",
+            )
 
 
 def app_builder(args: dict) -> Application:

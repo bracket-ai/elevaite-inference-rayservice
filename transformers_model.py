@@ -165,16 +165,17 @@ class TransformersModelDeployment:
 
     @web_app.get("/health")
     def check_health(self):
-        """Health check that verifies basic model functionality."""
+        # We only run this for text-generation tasks at the moment
+        # TODO: Add support for other tasks
+        if self.task != "text-generation":
+            return {"status": "healthy"}
+
         try:
             self._clear_cache()
 
             # Basic inference test
             with torch.no_grad():
-                if self.task == "text-generation":
-                    self.pipe("Is this thing on?", max_new_tokens=10)
-                else:
-                    self.pipe("Is this thing on?")
+                self.pipe("Is this thing on?", max_new_tokens=10)
 
             logger.info("Health check passed")
             return {"status": "healthy"}

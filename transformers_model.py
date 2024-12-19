@@ -168,7 +168,7 @@ class TransformersModelDeployment:
         # We only run this for text-generation tasks at the moment
         # TODO: Add support for other tasks
         if self.task != "text-generation":
-            return {"status": "healthy"}
+            pass
 
         try:
             self._clear_cache()

@@ -185,7 +185,7 @@ class TransformersModelDeployment:
             logger.error(f"Health check failed: {e}", exc_info=True)
             raise HTTPException(
                 status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
-                detail="Endpoint is unhealthy. Basic model.pipe() call failed.",
+                detail="Endpoint is unhealthy. Basic inference call failed.",
             )
         finally:
             self._clear_cache()

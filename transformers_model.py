@@ -9,6 +9,17 @@ from transformers import pipeline
 
 from utils import InferenceRequest, dtype_mapping, numpy_to_std
 
+SUPPORTED_HEALTH_CHECK_TASKS = {
+    "feature-extraction",
+    "summarization",
+    "text2text-generation",
+    "text-classification",
+    "text-generation",
+    "token-classification",
+    "zero-shot-classification",
+}
+
+
 logger = logging.getLogger("ray.serve")
 
 web_app = FastAPI()
@@ -165,15 +176,18 @@ class TransformersModelDeployment:
 
     @web_app.get("/health")
     def check_health(self):
-        # We only run this for text-generation tasks at the moment
-        # TODO: Add support for other tasks
-        if self.task != "text-generation":
-            return
 
         try:
             self._clear_cache()
+            # For pipelines that don't support the most basic inference test,
+            # we don't currently support health checking them
+            # FIXME: Add support for health checking these tasks.
+            # Will require matching the more complex call signature of these tasks.
+            if self.task not in SUPPORTED_HEALTH_CHECK_TASKS:
+                return {"warning": f"Health check not supported for task {self.task}"}
 
             # Basic inference test
+            # If this errors, the health check will fail.
             with torch.no_grad():
                 self.pipe("Is this thing on?", max_new_tokens=10)
 

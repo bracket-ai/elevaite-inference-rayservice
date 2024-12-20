@@ -178,7 +178,10 @@ class TransformersModelDeployment:
     def check_health(self):
 
         try:
+            # cache is only cleared if model is on CUDA, where we are memory-
+            # constrained.
             self._clear_cache()
+
             # For pipelines that don't support the most basic inference test,
             # we don't currently support health checking them
             # FIXME: Add support for health checking these tasks.

@@ -160,7 +160,7 @@ class TransformersModelDeployment:
         ```python
         import requests
 
-        url = "http://localhost:8000/infer"
+        url = "http://<URL>/<endpoint>/infer"
         headers = {"Content-Type": "application/json"}
 
         # Replace with any request JSON from examples above
@@ -178,7 +178,7 @@ class TransformersModelDeployment:
 
         **Example curl request:**
         ```bash
-        curl -X POST "http://localhost:8000/infer" \
+        curl -X POST "http://<URL>/<endpoint>/infer" \
         -H "Content-Type: application/json" \
         -d '<REPLACE_WITH_REQUEST_JSON_FROM_EXAMPLES_ABOVE>'
         ```

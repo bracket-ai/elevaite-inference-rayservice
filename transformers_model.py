@@ -64,6 +64,35 @@ class TransformersModelDeployment:
         # https://github.com/huggingface/transformers/blob/main/src/transformers/pipelines/base.py#L287-L290
         self.pipe = pipeline(**pipe_kwargs)
 
+        # REQUIRED FOR BATCHING
+        # If there is an eos_token_id, set the tokenizer and generation config pad token ids to it
+        if hasattr(self.pipe.model.config, "eos_token_id"):
+            # model.config.eos_token_id is either a scalar or a list
+            eos_token_id = (
+                self.pipe.model.config.eos_token_id[0]
+                if isinstance(self.pipe.model.config.eos_token_id, list)
+                else self.pipe.model.config.eos_token_id
+            )
+
+            logger.info(f"EOS token id: {eos_token_id}")
+
+            # If there is a tokenizer and it doesn't have a pad token id, set it to the eos token id
+            # If it already has a pad token id, we don't need to set it again
+            if (
+                hasattr(self.pipe.model.tokenizer, "pad_token_id")
+                and self.pipe.model.tokenizer.pad_token_id is None
+            ):
+                logger.info("Setting pad token id to eos token id in tokenizer")
+                self.pipe.model.tokenizer.pad_token_id = eos_token_id
+
+            # If there is a generation config and it doesn't have a pad token id, set it to the eos token id
+            if (
+                self.pipe.model.generation_config
+                and self.pipe.model.generation_config.pad_token_id is None
+            ):
+                logger.info("Setting pad token id to eos token id in generation config")
+                self.pipe.model.generation_config.pad_token_id = eos_token_id
+
     def _clear_cache(self):
         if str(self.pipe.device) == "cuda":
             torch.cuda.empty_cache()

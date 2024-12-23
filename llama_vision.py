@@ -16,7 +16,7 @@ logger = logging.getLogger("ray.serve")
 web_app = FastAPI()
 
 
-@serve.deployment
+@serve.deployment(health_check_period_s=30)
 @serve.ingress(web_app)
 class LlamaVisionDeployment:
     def __init__(
@@ -193,6 +193,41 @@ class LlamaVisionDeployment:
     @web_app.get("/model_device")
     def model_device(self) -> str:
         return str(self.model.device)
+
+    @web_app.get("/health")
+    def check_health(self):
+        """Health check that verifies basic model functionality."""
+        try:
+            self._clear_cache()
+
+            # Basic inference test
+            with torch.no_grad():
+                test_input = self.processor.apply_chat_template(
+                    [{"role": "user", "content": "Is this thing on?"}],
+                    add_generation_prompt=False,
+                )
+
+                # When only text is provided, use the tokenizer, not the processor
+                inputs = self.processor.tokenizer(
+                    test_input,
+                    return_tensors="pt",
+                    add_special_tokens=False,
+                ).to(self.model.device)
+
+                self.model.generate(**inputs, max_new_tokens=10)
+
+            logger.info("Health check passed")
+            return {"status": "healthy"}
+
+        except Exception as e:
+            self._clear_cache()
+            logger.error(f"Health check failed: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+                detail="Endpoint is unhealthy. Basic model.generate() call failed.",
+            )
+        finally:
+            self._clear_cache()
 
 
 def app_builder(args: dict) -> Application:

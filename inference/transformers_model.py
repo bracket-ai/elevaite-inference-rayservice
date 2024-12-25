@@ -79,19 +79,20 @@ class TransformersModelDeployment:
             # If there is a tokenizer and it doesn't have a pad token id, set it to the eos token id
             # If it already has a pad token id, we don't need to set it again
             if (
-                hasattr(self.pipe.model.tokenizer, "pad_token_id")
-                and self.pipe.model.tokenizer.pad_token_id is None
+                hasattr(self.pipe.tokenizer, "pad_token_id")
+                and self.pipe.tokenizer.pad_token_id is None
             ):
                 logger.info("Setting pad token id to eos token id in tokenizer")
-                self.pipe.model.tokenizer.pad_token_id = eos_token_id
+                self.pipe.tokenizer.pad_token_id = eos_token_id
 
             # If there is a generation config and it doesn't have a pad token id, set it to the eos token id
-            if (
-                self.pipe.model.generation_config
-                and self.pipe.model.generation_config.pad_token_id is None
-            ):
-                logger.info("Setting pad token id to eos token id in generation config")
-                self.pipe.model.generation_config.pad_token_id = eos_token_id
+            # Does this need to be set?
+            # if (
+            #     self.pipe.model.generation_config
+            #     and self.pipe.model.generation_config.pad_token_id is None
+            # ):
+            #     logger.info("Setting pad token id to eos token id in generation config")
+            #     self.pipe.model.generation_config.pad_token_id = eos_token_id
 
     def _clear_cache(self):
         if str(self.pipe.device) == "cuda":

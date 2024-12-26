@@ -1,5 +1,7 @@
+import json
 import logging
 from http import HTTPStatus
+from typing import List
 
 import torch.cuda
 from fastapi import FastAPI, HTTPException
@@ -7,7 +9,7 @@ from ray import serve
 from ray.serve import Application
 from transformers import pipeline
 
-from inference.utils import InferenceRequest, dtype_mapping, numpy_to_std
+from inference.utils import TransformersInferenceRequest, dtype_mapping, numpy_to_std
 
 SUPPORTED_HEALTH_CHECK_TASKS = {
     "feature-extraction",
@@ -114,132 +116,98 @@ class TransformersModelDeployment:
     def model_device(self) -> str:
         return str(self.pipe.device)
 
-    @web_app.post("/infer")
-    def infer(self, inference_request: InferenceRequest) -> dict:
+    @serve.batch(max_batch_size=8)
+    async def _batch_inference(
+        self, requests: List[TransformersInferenceRequest]
+    ) -> List[dict]:
         """
-        Perform inference using the model pipeline. Supports both text generation and chat completion
-        with single, serial, and batch processing options.
-
-        **Request Format:**
-        The endpoint expects a JSON request with `args` (input data) and `kwargs` (generation parameters):
-        ```json
-        {
-            "args": [...],     # Input data
-            "kwargs": {        # Generation parameters
-                "do_sample": false,
-                "max_new_tokens": 50,
-                "batch_size": 4  # Optional, for batch processing
-            }
-        }
-        ```
-
-        **Examples:**
-
-        1. Single Text Generation:
-        ```json
-        {
-            "args": ["Write a poem"],
-            "kwargs": {
-                "do_sample": false,
-                "max_new_tokens": 50
-            }
-        }
-        ```
-
-        2. Multiple Text Generation (Serial/Batch):
-        ```json
-        {
-            "args": [["Write a haiku", "Write a song"]],
-            "kwargs": {
-                "do_sample": false,
-                "max_new_tokens": 50,
-                "batch_size": 4  # Optional, enables batch processing
-            }
-        }
-        ```
-
-        3. Single Chat Completion:
-        ```json
-        {
-            "args": [[
-                {"role": "system", "content": "You are a helpful assistant"},
-                {"role": "user", "content": "Hello!"}
-            ]],
-            "kwargs": {
-                "do_sample": false,
-                "max_new_tokens": 50
-            }
-        }
-        ```
-
-        4. Multiple Chat Completion (Serial/Batch):
-        ```json
-        {
-            "args": [[
-                [
-                    {"role": "system", "content": "You are a helpful assistant"},
-                    {"role": "user", "content": "Hello!"}
-                ],
-                [
-                    {"role": "system", "content": "You are a pirate"},
-                    {"role": "user", "content": "Hello!"}
-                ]
-            ]],
-            "kwargs": {
-                "do_sample": false,
-                "max_new_tokens": 50,
-                "batch_size": 2  # Optional, enables batch processing
-            }
-        }
-        ```
-
-        **Notes:**
-        - Chat inputs must be properly nested within lists
-        - Batch processing is controlled via the optional `batch_size` parameter
-        - Memory usage scales with batch size
-
-        **Example Python request:**
-        ```python
-        import requests
-
-        url = "http://<URL>/<endpoint>/infer"
-        headers = {"Content-Type": "application/json"}
-
-        # Replace with any request JSON from examples above
-        request = {
-            "args": ["Write a poem"],
-            "kwargs": {
-                "do_sample": False,
-                "max_new_tokens": 50
-            }
-        }
-
-        response = requests.post(url, json=request, headers=headers)
-        result = response.json()
-        ```
-
-        **Example curl request:**
-        ```bash
-        curl -X POST "http://<URL>/<endpoint>/infer" \
-        -H "Content-Type: application/json" \
-        -d '<REPLACE_WITH_REQUEST_JSON_FROM_EXAMPLES_ABOVE>'
-        ```
+        Perform batch inference using the model pipeline.
+        Batched inference for a set of requests requires that all requests have the same kwargs.
+        This function groups requests by kwargs and performs parallel inference for each group serially.
         """
-
-        args = inference_request.args
-        kwargs = inference_request.kwargs
 
         try:
-            self._clear_cache()
-            with torch.no_grad():
-                result = self.pipe(*args, **kwargs)
-            return {"result": numpy_to_std(result)}
+            results: List[dict] = []
+
+            # group consecutive requests with the same kwargs
+            current_group: List[str] = []
+            current_kwargs: str | None = None
+
+            for i, request in enumerate(requests):
+                kwargs_key = json.dumps(request.kwargs, sort_keys=True)
+
+                # If the kwargs have changed and we have a current group, perform inference
+                if kwargs_key != current_kwargs and current_group:
+
+                    if current_kwargs is None:
+                        raise ValueError(
+                            "current_kwargs should not be None at this point"
+                        )
+
+                    # perform inference for the current group
+                    self._clear_cache()
+                    with torch.no_grad():
+                        group_results = self.pipe(
+                            current_group,
+                            **{
+                                **json.loads(current_kwargs),
+                                "batch_size": len(current_group),
+                            },
+                        )
+
+                    results.extend({"result": numpy_to_std(r)} for r in group_results)
+                    current_group = []
+
+                current_group.extend(request.args)
+                current_kwargs = kwargs_key
+
+            # perform inference for the last group
+            if current_group:
+                if current_kwargs is None:
+                    raise ValueError("current_kwargs should not be None at this point")
+
+                self._clear_cache()
+                with torch.no_grad():
+                    group_results = self.pipe(
+                        current_group,
+                        **{
+                            **json.loads(current_kwargs),
+                            "batch_size": len(current_group),
+                        },
+                    )
+                results.extend({"result": numpy_to_std(r)} for r in group_results)
+
+            return results
+
         except Exception as e:
-            self._clear_cache()
-            logger.error(f"Internal Server Error: {e}", exc_info=True)
+            logger.error(f"Batch Inference Error: {e}", exc_info=True)
             raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR)
-        finally:
-            self._clear_cache()
+
+    @web_app.post("/infer")
+    async def infer(self, inference_request: TransformersInferenceRequest) -> dict:
+        if self.batching_enabled:
+            try:
+                return await self._batch_inference(inference_request)
+            except Exception as e:
+                logger.error(f"Batch Inference Error: {e}", exc_info=True)
+                raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR)
+            finally:
+                self._clear_cache()
+        else:
+            args = inference_request.args
+            kwargs = inference_request.kwargs
+
+            try:
+                self._clear_cache()
+                with torch.no_grad():
+                    result = self.pipe(*args, **kwargs)
+                return {"result": numpy_to_std(result)}
+            except Exception as e:
+                self._clear_cache()
+                logger.error(f"Internal Server Error: {e}", exc_info=True)
+                raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR)
+            finally:
+                self._clear_cache()
 
     @web_app.get("/model_config")
     def model_config(self):

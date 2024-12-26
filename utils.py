@@ -3,7 +3,7 @@ from typing import Any, Dict, List
 
 import numpy as np
 import torch.cuda
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 def numpy_to_std(obj):
@@ -34,6 +34,20 @@ def numpy_to_std(obj):
 class InferenceRequest(BaseModel):
     args: List[Any] = Field(default=[])
     kwargs: Dict[str, Any] = Field(default={})
+
+
+class TransformersInferenceRequest(InferenceRequest):
+    args: List[Any] = Field(default=[])
+    kwargs: Dict[str, Any] = Field(default={})
+
+    @field_validator("args", mode="before")
+    def validate_args(cls, v):
+        # Allow a single list but not multiple nested lists
+        if len([arg for arg in v if isinstance(arg, list)]) > 1:
+            raise ValueError(
+                "Only one list argument is allowed in args. If you need to pass multiple lists, please pass them as separate requests."
+            )
+        return v
 
 
 class Library(enum.Enum):

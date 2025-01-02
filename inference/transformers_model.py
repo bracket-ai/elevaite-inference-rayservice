@@ -1,7 +1,7 @@
 import json
 import logging
 from http import HTTPStatus
-from typing import List
+from typing import Any, List
 
 import torch.cuda
 from fastapi import FastAPI, HTTPException
@@ -9,7 +9,7 @@ from ray import serve
 from ray.serve import Application
 from transformers import pipeline
 
-from inference.utils import TransformersInferenceRequest, dtype_mapping, numpy_to_std
+from inference.utils import BatchableInferenceRequest, dtype_mapping, numpy_to_std
 
 SUPPORTED_HEALTH_CHECK_TASKS = {
     "feature-extraction",
@@ -109,7 +109,7 @@ class TransformersModelDeployment:
 
     @serve.batch(max_batch_size=8)
     async def _batch_inference(
-        self, requests: List[TransformersInferenceRequest]
+        self, requests: List[BatchableInferenceRequest]
     ) -> List[dict]:
         """
         Perform batch inference using the model pipeline.
@@ -121,7 +121,7 @@ class TransformersModelDeployment:
             results: List[dict] = []
 
             # group consecutive requests with the same kwargs
-            current_group: List[str] = []
+            current_group: List[Any] = []
             current_kwargs: str | None = None
 
             for i, request in enumerate(requests):
@@ -149,7 +149,11 @@ class TransformersModelDeployment:
                     results.extend({"result": numpy_to_std(r)} for r in group_results)
                     current_group = []
 
-                current_group.extend(request.args)
+                if isinstance(request.args[0], list):
+                    current_group.append(request.args[0])
+                else:
+                    current_group.extend(request.args)
+
                 current_kwargs = kwargs_key
 
             # perform inference for the last group
@@ -175,7 +179,7 @@ class TransformersModelDeployment:
             raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR)
 
     @web_app.post("/infer")
-    async def infer(self, inference_request: TransformersInferenceRequest) -> dict:
+    async def infer(self, inference_request: BatchableInferenceRequest) -> dict:
         if self.batching_enabled:
             try:
                 return await self._batch_inference(inference_request)

@@ -36,17 +36,11 @@ class InferenceRequest(BaseModel):
     kwargs: Dict[str, Any] = Field(default={})
 
 
-class TransformersInferenceRequest(InferenceRequest):
-    args: List[Any] = Field(default=[])
-    kwargs: Dict[str, Any] = Field(default={})
-
+class BatchableInferenceRequest(InferenceRequest):
     @field_validator("args", mode="before")
     def validate_args(cls, v):
-        # Allow a single list but not multiple nested lists
-        if len([arg for arg in v if isinstance(arg, list)]) > 1:
-            raise ValueError(
-                "Only one list argument is allowed in args. If you need to pass multiple lists, please pass them as separate requests."
-            )
+        if not isinstance(v, list) or len(v) != 1:
+            raise ValueError("args must be a list containing exactly one item")
         return v
 
 

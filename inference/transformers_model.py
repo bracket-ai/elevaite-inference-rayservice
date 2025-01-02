@@ -99,15 +99,6 @@ class TransformersModelDeployment:
                 "No EOS token ID found in model config. Batching will not be supported."
             )
 
-            # If there is a generation config and it doesn't have a pad token id, set it to the eos token id
-            # Does this need to be set?
-            # if (
-            #     self.pipe.model.generation_config
-            #     and self.pipe.model.generation_config.pad_token_id is None
-            # ):
-            #     logger.info("Setting pad token id to eos token id in generation config")
-            #     self.pipe.model.generation_config.pad_token_id = eos_token_id
-
     def _clear_cache(self):
         if str(self.pipe.device) == "cuda":
             torch.cuda.empty_cache()

@@ -1,3 +1,4 @@
+colpali-engine>=0.3.0,<0.4.0
 Pillow
 python-multipart
 ray[serve]

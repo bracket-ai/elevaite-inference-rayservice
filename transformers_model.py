@@ -137,6 +137,9 @@ class TransformersModelDeployment:
 
                     # perform inference for the current group
                     self._clear_cache()
+                    logger.info(
+                        f"Performing batch inference with batch size: {len(current_group)}"
+                    )
                     with torch.no_grad():
                         group_results = self.pipe(
                             current_group,
@@ -145,6 +148,10 @@ class TransformersModelDeployment:
                                 "batch_size": len(current_group),
                             },
                         )
+
+                    logger.info(
+                        f"Batch inference completed. Results length: {len(group_results)}"
+                    )
 
                     results.extend({"result": numpy_to_std(r)} for r in group_results)
                     current_group = []
@@ -166,6 +173,9 @@ class TransformersModelDeployment:
                     raise ValueError("current_kwargs should not be None at this point")
 
                 self._clear_cache()
+                logger.info(
+                    f"Performing batch inference for the last group with batch size: {len(current_group)}"
+                )
                 with torch.no_grad():
                     group_results = self.pipe(
                         current_group,
@@ -174,6 +184,10 @@ class TransformersModelDeployment:
                             "batch_size": len(current_group),
                         },
                     )
+
+                logger.info(
+                    f"Batch inference completed. Results length: {len(group_results)}"
+                )
                 results.extend({"result": numpy_to_std(r)} for r in group_results)
 
             return results

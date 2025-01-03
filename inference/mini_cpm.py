@@ -9,7 +9,7 @@ from ray import serve
 from ray.serve import Application
 from transformers import AutoModel, AutoTokenizer
 
-from utils import dtype_mapping, numpy_to_std
+from inference.utils import dtype_mapping, numpy_to_std
 
 logger = logging.getLogger("ray.serve")
 

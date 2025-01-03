@@ -7,7 +7,7 @@ from ray import serve
 from ray.serve import Application
 from transformers import pipeline
 
-from utils import InferenceRequest, dtype_mapping, numpy_to_std
+from inference.utils import InferenceRequest, dtype_mapping, numpy_to_std
 
 SUPPORTED_HEALTH_CHECK_TASKS = {
     "feature-extraction",

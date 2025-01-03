@@ -7,7 +7,7 @@ from ray import serve
 from ray.serve import Application
 from sentence_transformers import SentenceTransformer
 
-from utils import InferenceRequest, dtype_mapping, numpy_to_std
+from inference.utils import InferenceRequest, dtype_mapping, numpy_to_std
 
 logger = logging.getLogger("ray.serve")
 

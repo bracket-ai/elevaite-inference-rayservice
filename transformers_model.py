@@ -1,5 +1,7 @@
+import json
 import logging
 from http import HTTPStatus
+from typing import Any, List
 
 import torch.cuda
 from fastapi import FastAPI, HTTPException
@@ -7,7 +9,7 @@ from ray import serve
 from ray.serve import Application
 from transformers import pipeline
 
-from utils import InferenceRequest, dtype_mapping, numpy_to_std
+from utils import BatchableInferenceRequest, dtype_mapping, numpy_to_std
 
 SUPPORTED_HEALTH_CHECK_TASKS = {
     "feature-extraction",
@@ -64,6 +66,39 @@ class TransformersModelDeployment:
         # https://github.com/huggingface/transformers/blob/main/src/transformers/pipelines/base.py#L287-L290
         self.pipe = pipeline(**pipe_kwargs)
 
+        # REQUIRED FOR BATCHING
+        self.batching_enabled = False
+        # If there is an eos_token_id, set the tokenizer and generation config pad token ids to it
+        if hasattr(self.pipe.model.config, "eos_token_id"):
+            logger.info("Checking for EOS token ID in model config")
+            # model.config.eos_token_id is either a scalar or a list
+            eos_token_id = (
+                self.pipe.model.config.eos_token_id[0]
+                if isinstance(self.pipe.model.config.eos_token_id, list)
+                else self.pipe.model.config.eos_token_id
+            )
+
+            logger.info(f"EOS token id: {eos_token_id}")
+
+            # If there is a tokenizer and it doesn't have a pad token id, set it to the eos token id
+            # If it already has a pad token id, we don't need to set it again
+            if hasattr(self.pipe.tokenizer, "pad_token_id"):
+                logger.info("Found pad_token_id attribute in tokenizer")
+                if self.pipe.tokenizer.pad_token_id is None:
+                    logger.info("Setting pad token id to eos token id in tokenizer")
+                    self.pipe.tokenizer.pad_token_id = eos_token_id
+                else:
+                    logger.info(
+                        f"Tokenizer already has pad token id: {self.pipe.tokenizer.pad_token_id}"
+                    )
+                self.batching_enabled = True
+            else:
+                logger.info("Tokenizer does not have pad_token_id attribute")
+        else:
+            logger.info(
+                "No EOS token ID found in model config. Batching will not be supported."
+            )
+
     def _clear_cache(self):
         if str(self.pipe.device) == "cuda":
             torch.cuda.empty_cache()
@@ -72,103 +107,121 @@ class TransformersModelDeployment:
     def model_device(self) -> str:
         return str(self.pipe.device)
 
-    @web_app.post("/infer")
-    def infer(self, inference_request: InferenceRequest) -> dict:
+    @serve.batch(max_batch_size=5)
+    async def _batch_inference(
+        self, requests: List[BatchableInferenceRequest]
+    ) -> List[dict]:
         """
-        **Request Format:**
-        ```json
-        {
-            "args": ["Help me write a poem that rhymes"],
-            "kwargs": {"do_sample": false, "max_new_tokens": 50}
-        }
-        ```
-
-        **Batch Processing:**
-        ```json
-        {
-            "args": [["Write a haiku", "Write a limerick"]],
-            "kwargs": {"do_sample": false, "max_new_tokens": 50}
-        }
-        ```
-
-        **Example Python code:**
-        ```python
-        import requests
-
-        url = "<URL>/<model_id>/infer"
-
-        # Single text generation
-        payload = {
-            "args": ["Help me write a poem that rhymes"],
-            "kwargs": {
-                "do_sample": False,
-                "max_new_tokens": 50
-            }
-        }
-
-        # Or batch text generation
-        batch_payload = {
-            "args": [["Write a haiku", "Write a limerick"]],
-            "kwargs": {
-                "do_sample": False,
-                "max_new_tokens": 50
-            }
-        }
-
-        headers = {"Content-Type": "application/json"}
-
-        # Basic authentication credentials
-        username = "your_username"
-        password = "your_password"
-
-        response = requests.post(
-            url,
-            json=payload,  # or batch_payload
-            headers=headers,
-            auth=(username, password),
-        )
-        result = response.json()
-        ```
-
-        **Example curl commands:**
-
-        Single generation:
-        ```bash
-        curl -X POST "<URL>/<model_id>/infer" \
-        -H "Content-Type: application/json" \
-        -u <username>:<password> \
-        -d '{
-            "args": ["Help me write a poem that rhymes"],
-            "kwargs": {"do_sample": false, "max_new_tokens": 50}
-        }'
-        ```
-
-        Batch generation:
-        ```bash
-        curl -X POST "<URL>/<model_id>/infer" \
-        -H "Content-Type: application/json" \
-        -u <username>:<password> \
-        -d '{
-            "args": [["Write a haiku", "Write a limerick"]],
-            "kwargs": {"do_sample": false, "max_new_tokens": 50}
-        }'
-        ```
+        Perform batch inference using the model pipeline.
+        Batched inference for a set of requests requires that all requests have the same kwargs.
+        This function groups requests by kwargs and performs parallel inference for each group serially.
         """
-
-        args = inference_request.args
-        kwargs = inference_request.kwargs
 
         try:
-            self._clear_cache()
-            with torch.no_grad():
-                result = self.pipe(*args, **kwargs)
-            return {"result": numpy_to_std(result)}
+            logger.info(f"Starting batch call with {len(requests)} requests")
+            results: List[dict] = []
+
+            # group consecutive requests with the same kwargs
+            current_group: List[Any] = []
+            current_kwargs: str | None = None
+
+            for i, request in enumerate(requests):
+                kwargs_key = json.dumps(request.kwargs, sort_keys=True)
+
+                # If the kwargs have changed and we have a current group, perform inference
+                if kwargs_key != current_kwargs and current_group:
+
+                    if current_kwargs is None:
+                        raise ValueError(
+                            "current_kwargs should not be None at this point"
+                        )
+
+                    # perform inference for the current group
+                    self._clear_cache()
+                    logger.info(
+                        f"Performing batch inference with batch size: {len(current_group)}"
+                    )
+                    with torch.no_grad():
+                        group_results = self.pipe(
+                            current_group,
+                            **{
+                                **json.loads(current_kwargs),
+                                "batch_size": len(current_group),
+                            },
+                        )
+
+                    logger.info(
+                        f"Batch inference completed. Results length: {len(group_results)}"
+                    )
+
+                    results.extend({"result": numpy_to_std(r)} for r in group_results)
+                    current_group = []
+
+                # Args is only ever length 1, so we can safely access the first element to see if it's a chat template
+                # https://github.com/huggingface/transformers/blob/main/src/transformers/pipelines/text_generation.py#L264
+                if self.task == "text-generation" and isinstance(
+                    request.args[0], (list, tuple, dict)
+                ):
+                    current_group.append(request.args[0])
+                else:
+                    current_group.extend(request.args)
+
+                current_kwargs = kwargs_key
+
+            # perform inference for the last group
+            if current_group:
+                if current_kwargs is None:
+                    raise ValueError("current_kwargs should not be None at this point")
+
+                self._clear_cache()
+                logger.info(
+                    f"Performing batch inference for the last group with batch size: {len(current_group)}"
+                )
+                with torch.no_grad():
+                    group_results = self.pipe(
+                        current_group,
+                        **{
+                            **json.loads(current_kwargs),
+                            "batch_size": len(current_group),
+                        },
+                    )
+
+                logger.info(
+                    f"Batch inference completed. Results length: {len(group_results)}"
+                )
+                results.extend({"result": numpy_to_std(r)} for r in group_results)
+
+            return results
+
         except Exception as e:
-            self._clear_cache()
-            logger.error(f"Internal Server Error: {e}", exc_info=True)
+            logger.error(f"Batch Inference Error: {e}", exc_info=True)
             raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR)
-        finally:
-            self._clear_cache()
+
+    @web_app.post("/infer")
+    async def infer(self, inference_request: BatchableInferenceRequest) -> dict:
+        if self.batching_enabled:
+            try:
+                return await self._batch_inference(inference_request)
+            except Exception as e:
+                logger.error(f"Batch Inference Error: {e}", exc_info=True)
+                raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR)
+            finally:
+                self._clear_cache()
+        else:
+            args = inference_request.args
+            kwargs = inference_request.kwargs
+
+            try:
+                self._clear_cache()
+                with torch.no_grad():
+                    result = self.pipe(*args, **kwargs)
+                return {"result": numpy_to_std(result)}
+            except Exception as e:
+                self._clear_cache()
+                logger.error(f"Internal Server Error: {e}", exc_info=True)
+                raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR)
+            finally:
+                self._clear_cache()
 
     @web_app.get("/model_config")
     def model_config(self):

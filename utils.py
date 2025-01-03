@@ -3,7 +3,7 @@ from typing import Any, Dict, List
 
 import numpy as np
 import torch.cuda
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 def numpy_to_std(obj):
@@ -34,6 +34,14 @@ def numpy_to_std(obj):
 class InferenceRequest(BaseModel):
     args: List[Any] = Field(default=[])
     kwargs: Dict[str, Any] = Field(default={})
+
+
+class BatchableInferenceRequest(InferenceRequest):
+    @field_validator("args", mode="before")
+    def validate_args(cls, v):
+        if not isinstance(v, list) or len(v) != 1:
+            raise ValueError("args must be a list containing exactly one item")
+        return v
 
 
 class Library(enum.Enum):

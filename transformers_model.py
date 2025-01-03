@@ -118,6 +118,7 @@ class TransformersModelDeployment:
         """
 
         try:
+            logger.info(f"Starting batch call with {len(requests)} requests")
             results: List[dict] = []
 
             # group consecutive requests with the same kwargs

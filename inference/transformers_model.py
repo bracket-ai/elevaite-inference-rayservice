@@ -125,7 +125,7 @@ class TransformersModelDeployment:
             current_group: List[Any] = []
             current_kwargs: str | None = None
 
-            for i, request in enumerate(requests):
+            for request in requests:
                 kwargs_key = json.dumps(request.kwargs, sort_keys=True)
 
                 # If the kwargs have changed and we have a current group, perform inference

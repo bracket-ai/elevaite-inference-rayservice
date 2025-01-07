@@ -159,9 +159,7 @@ class TransformersModelDeployment:
 
                 # Args is only ever length 1, so we can safely access the first element to see if it's a chat template
                 # https://github.com/huggingface/transformers/blob/main/src/transformers/pipelines/text_generation.py#L264
-                if self.task == "text-generation" and isinstance(
-                    request.args[0], (list, tuple, dict)
-                ):
+                if self.task == "text-generation" and isinstance(request.args[0], dict):
                     current_group.append(request.args[0])
                 else:
                     current_group.extend(request.args)

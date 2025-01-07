@@ -45,10 +45,10 @@ class BatchableInferenceRequest(InferenceRequest):
             raise ValueError(f"args must contain exactly one item (got {len(v)} items)")
 
         arg = v[0]
-        # Must be either a string or a list of dicts
+        # Must be either a string, dict, or a list of dicts
         # list of dicts is used for tasks like text-generation and document-qa
         # https://github.com/huggingface/transformers/blob/main/src/transformers/pipelines/text_generation.py#L264
-        if isinstance(arg, str):
+        if isinstance(arg, (str, dict)):
             return v
         if isinstance(arg, list) and all(isinstance(item, dict) for item in arg):
             return v

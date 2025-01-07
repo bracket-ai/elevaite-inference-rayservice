@@ -39,9 +39,19 @@ class InferenceRequest(BaseModel):
 class BatchableInferenceRequest(InferenceRequest):
     @field_validator("args", mode="before")
     def validate_args(cls, v):
-        if not isinstance(v, list) or len(v) != 1:
-            raise ValueError("args must be a list containing exactly one item")
-        return v
+        if not isinstance(v, list):
+            raise ValueError("args must be a list")
+        if len(v) != 1:
+            raise ValueError(f"args must contain exactly one item (got {len(v)} items)")
+
+        arg = v[0]
+        # Must be either a string or a list of dicts
+        if isinstance(arg, str):
+            return v
+        if isinstance(arg, list) and all(isinstance(item, dict) for item in arg):
+            return v
+
+        raise ValueError("args[0] must be either a string or a list of dictionaries")
 
 
 class Library(enum.Enum):

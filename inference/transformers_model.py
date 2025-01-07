@@ -107,7 +107,7 @@ class TransformersModelDeployment:
     def model_device(self) -> str:
         return str(self.pipe.device)
 
-    @serve.batch(max_batch_size=5)
+    @serve.batch(max_batch_size=5, batch_wait_timeout_s=0.1)
     async def _batch_inference(
         self, requests: List[BatchableInferenceRequest]
     ) -> List[dict]:

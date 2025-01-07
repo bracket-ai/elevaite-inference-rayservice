@@ -157,13 +157,9 @@ class TransformersModelDeployment:
                     results.extend({"result": numpy_to_std(r)} for r in group_results)
                     current_group = []
 
-                # Args is only ever length 1, so we can safely access the first element to see if it's a chat template
-                # https://github.com/huggingface/transformers/blob/main/src/transformers/pipelines/text_generation.py#L264
-                if self.task == "text-generation" and isinstance(request.args[0], dict):
-                    current_group.append(request.args[0])
-                else:
-                    current_group.extend(request.args)
-
+                # Args is only ever length 1
+                # args[0] is only ever a list of dicts or a string, so we are safe to append it
+                current_group.append(request.args[0])
                 current_kwargs = kwargs_key
 
             # perform inference for the last group

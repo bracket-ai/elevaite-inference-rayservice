@@ -36,7 +36,7 @@ class InferenceRequest(BaseModel):
     kwargs: Dict[str, Any] = Field(default={})
 
 
-class BatchReconfigRequest(BaseModel):
+class BatchingConfig(BaseModel):
     max_batch_size: int = Field(
         gt=0, description="Maximum number of requests to batch together"
     )

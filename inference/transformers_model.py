@@ -104,6 +104,10 @@ class TransformersModelDeployment:
                     "Tokenizer does not have pad_token_id attribute. Batching will not be supported."
                 )
 
+            logger.info(f"Batching enabled: {self.batching_enabled}")
+            self.max_batch_size = 5
+            self.batch_wait_timeout_s = 0.1
+
     def _clear_cache(self):
         if str(self.pipe.device) == "cuda":
             torch.cuda.empty_cache()

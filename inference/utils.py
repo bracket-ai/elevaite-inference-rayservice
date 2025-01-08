@@ -48,11 +48,6 @@ class BatchingConfigUpdateRequest(BaseModel):
         ge=0,
         description="Maximum time to wait for batch to fill up in seconds",
     )
-    max_ongoing_requests: int | None = Field(
-        default=None,
-        gt=0,
-        description="Maximum number of requests to process concurrently",
-    )
 
     @model_validator(mode="before")
     def validate_at_least_one_not_null(self) -> Self:
@@ -66,7 +61,6 @@ class BatchingConfigUpdateRequest(BaseModel):
 class BatchingConfig(BaseModel):
     max_batch_size: int | None
     batch_wait_timeout_s: float | None
-    max_ongoing_requests: int | None
 
 
 class BatchingConfigUpdateResponse(BatchingConfig):

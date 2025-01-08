@@ -220,6 +220,71 @@ class TransformersModelDeployment:
 
     @web_app.post("/infer")
     async def infer(self, inference_request: BatchableInferenceRequest) -> dict:
+        """
+        **Request Format:**
+        ```json
+        {
+            "args": ["Help me write a poem that rhymes"],
+            "kwargs": {"do_sample": false, "max_new_tokens": 50}
+        }
+        ```
+
+        **Chat Example:**
+        ```json
+        {
+            "args": [
+                [
+                    {"role": "system", "content": "You are a helpful assistant."},
+                    {"role": "user", "content": "What is the capital of France?"},
+                    {"role": "assistant", "content": "The capital of France is Paris."},
+                    {"role": "user", "content": "What is its population?"}
+                ]
+            ],
+            "kwargs": {
+                "do_sample": true,
+                "temperature": 0.7,
+                "max_new_tokens": 100
+            }
+        }
+        ```
+
+        **Example Python code:**
+        ```python
+        import requests
+        url = "<URL>/<model_id>/infer"
+        # Single text generation
+        payload = {
+            "args": ["Help me write a poem that rhymes"],
+            "kwargs": {
+                "do_sample": False,
+                "max_new_tokens": 50
+            }
+        }
+
+        headers = {"Content-Type": "application/json"}
+        # Basic authentication credentials
+        username = "your_username"
+        password = "your_password"
+        response = requests.post(
+            url,
+            json=payload,  # or batch_payload
+            headers=headers,
+            auth=(username, password),
+        )
+        result = response.json()
+        ```
+        **Example curl commands:**
+        Single generation:
+        ```bash
+        curl -X POST "<URL>/<model_id>/infer" \
+        -H "Content-Type: application/json" \
+        -u <username>:<password> \
+        -d '{
+            "args": ["Help me write a poem that rhymes"],
+            "kwargs": {"do_sample": false, "max_new_tokens": 50}
+        }'
+        ```
+        """
         if self.batching_enabled:
             try:
                 return await self._batch_infer(inference_request)

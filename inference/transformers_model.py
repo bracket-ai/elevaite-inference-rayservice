@@ -150,6 +150,9 @@ class TransformersModelDeployment:
                             },
                         )
 
+                    if not isinstance(group_results, list):
+                        group_results = [group_results]
+
                     logger.info(
                         f"Batch inference completed. Results length: {len(group_results)}"
                     )
@@ -179,6 +182,9 @@ class TransformersModelDeployment:
                             "batch_size": len(current_group),
                         },
                     )
+
+                    if not isinstance(group_results, list):
+                        group_results = [group_results]
 
                 logger.info(
                     f"Batch inference completed. Results length: {len(group_results)}"

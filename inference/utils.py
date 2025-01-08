@@ -36,6 +36,15 @@ class InferenceRequest(BaseModel):
     kwargs: Dict[str, Any] = Field(default={})
 
 
+class BatchReconfigRequest(BaseModel):
+    max_batch_size: int = Field(
+        gt=0, description="Maximum number of requests to batch together"
+    )
+    batch_wait_timeout_s: float = Field(
+        ge=0, description="Maximum time to wait for batch to fill up in seconds"
+    )
+
+
 class BatchableInferenceRequest(InferenceRequest):
     @field_validator("args", mode="before")
     def validate_args(cls, v):

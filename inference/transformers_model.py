@@ -3,6 +3,7 @@ import logging
 from http import HTTPStatus
 from typing import Any, List
 
+import numpy as np
 import torch.cuda
 from fastapi import FastAPI, HTTPException
 from ray import serve
@@ -171,14 +172,24 @@ class TransformersModelDeployment:
                             },
                         )
 
-                    if not isinstance(group_results, list):
-                        group_results = [group_results]
+                    if isinstance(group_results, np.ndarray):
+                        logger.info(
+                            f"Batch inference completed. Results shape: {group_results.shape}"
+                        )
+                        results.extend(
+                            {"result": numpy_to_std(r)} for r in group_results
+                        )
+                    else:
+                        if not isinstance(group_results, list):
+                            group_results = [group_results]
 
-                    logger.info(
-                        f"Batch inference completed. Results length: {len(group_results)}"
-                    )
+                        logger.info(
+                            f"Batch inference completed. Results length: {len(group_results)}"
+                        )
+                        results.extend(
+                            {"result": numpy_to_std(r)} for r in group_results
+                        )
 
-                    results.extend({"result": numpy_to_std(r)} for r in group_results)
                     current_group = []
 
                 # Args is only ever length 1
@@ -204,13 +215,23 @@ class TransformersModelDeployment:
                         },
                     )
 
-                    if not isinstance(group_results, list):
-                        group_results = [group_results]
+                    if isinstance(group_results, np.ndarray):
+                        logger.info(
+                            f"Batch inference completed. Results shape: {group_results.shape}"
+                        )
+                        results.extend(
+                            {"result": numpy_to_std(r)} for r in group_results
+                        )
+                    else:
+                        if not isinstance(group_results, list):
+                            group_results = [group_results]
 
-                logger.info(
-                    f"Batch inference completed. Results length: {len(group_results)}"
-                )
-                results.extend({"result": numpy_to_std(r)} for r in group_results)
+                        logger.info(
+                            f"Batch inference completed. Results length: {len(group_results)}"
+                        )
+                        results.extend(
+                            {"result": numpy_to_std(r)} for r in group_results
+                        )
 
             return results
 

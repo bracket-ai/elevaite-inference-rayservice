@@ -34,7 +34,7 @@ logger = logging.getLogger("ray.serve")
 web_app = FastAPI()
 
 
-@serve.deployment(health_check_period_s=30)
+@serve.deployment(health_check_period_s=30, max_ongoing_requests=1024)
 @serve.ingress(web_app)
 class SentenceTransformersModelDeployment:
     def __init__(
@@ -254,9 +254,16 @@ class SentenceTransformersModelDeployment:
                     f"batch_wait_timeout_s updated to {config.batch_wait_timeout_s}"
                 )
 
+            if config.max_ongoing_requests is not None:
+                self.max_ongoing_requests = config.max_ongoing_requests
+                message.append(
+                    f"max_ongoing_requests updated to {config.max_ongoing_requests}"
+                )
+
             return BatchingConfigUpdateResponse(
                 max_batch_size=self.max_batch_size,
                 batch_wait_timeout_s=self.batch_wait_timeout_s,
+                max_ongoing_requests=self.max_ongoing_requests,
                 message=", ".join(message) if message else "No changes made",
             )
 
@@ -272,6 +279,7 @@ class SentenceTransformersModelDeployment:
         return BatchingConfig(
             max_batch_size=self.max_batch_size,
             batch_wait_timeout_s=self.batch_wait_timeout_s,
+            max_ongoing_requests=self.max_ongoing_requests,
         )
 
 

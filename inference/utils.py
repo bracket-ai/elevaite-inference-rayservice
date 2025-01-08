@@ -51,7 +51,7 @@ class BatchingConfigUpdateRequest(BaseModel):
 
     @model_validator(mode="before")
     def validate_at_least_one_not_null(self) -> Self:
-        if self.max_batch_size is None and self.batch_wait_timeout_s is None:
+        if self["max_batch_size"] is None and self["batch_wait_timeout_s"] is None:
             raise ValueError(
                 "At least one of max_batch_size or batch_wait_timeout_s must be non-null"
             )

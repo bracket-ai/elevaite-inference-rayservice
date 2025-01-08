@@ -1,5 +1,7 @@
+import json
 import logging
 from http import HTTPStatus
+from typing import Any, List
 
 import torch.cuda
 from fastapi import FastAPI, HTTPException
@@ -7,7 +9,25 @@ from ray import serve
 from ray.serve import Application
 from sentence_transformers import SentenceTransformer
 
-from inference.utils import InferenceRequest, dtype_mapping, numpy_to_std
+<<<<<<< HEAD:inference/sentence_transformers_model.py
+from inference.utils import (
+    BatchableInferenceRequest,
+    BatchingConfig,
+    BatchingConfigUpdateRequest,
+    BatchingConfigUpdateResponse,
+    dtype_mapping,
+    numpy_to_std,
+)
+=======
+from utils import (
+    BatchableInferenceRequest,
+    BatchingConfig,
+    BatchingConfigUpdateRequest,
+    BatchingConfigUpdateResponse,
+    dtype_mapping,
+    numpy_to_std,
+)
+>>>>>>> a729742 (st to allow batching):sentence_transformers_model.py
 
 logger = logging.getLogger("ray.serve")
 
@@ -55,12 +75,79 @@ class SentenceTransformersModelDeployment:
         self.model = SentenceTransformer(**sentence_transformers_kwargs)
         self.model = self.model.eval()
 
+        self.batching_enabled = True  # Always true since encode() handles batching
+        self.max_batch_size = 32  # Default from encode() method
+        self.batch_wait_timeout_s = 0.1
+
     @web_app.get("/model_device")
     def model_device(self) -> str:
         return str(self.model.device)
 
+    @serve.batch(max_batch_size=32, batch_wait_timeout_s=0.1)
+    async def _batch_infer(
+        self, requests: List[BatchableInferenceRequest]
+    ) -> List[dict]:
+        try:
+            logger.info(f"Starting batch call with {len(requests)} requests")
+
+            # Group by kwargs since encode() supports different options
+            current_group: List[Any] = []
+            current_kwargs: str | None = None
+            results: List[dict] = []
+
+            for request in requests:
+                # Handle None kwargs by converting to empty dict
+                kwargs_to_serialize = (
+                    request.kwargs if request.kwargs is not None else {}
+                )
+                kwargs_key = json.dumps(kwargs_to_serialize, sort_keys=True)
+
+                if kwargs_key != current_kwargs and current_group:
+
+                    if current_kwargs is None:
+                        raise ValueError(
+                            "current_kwargs should not be None at this point"
+                        )
+
+                    # Process current group
+                    with torch.no_grad():
+                        group_results = self.model.encode(
+                            current_group,
+                            batch_size=len(current_group),
+                            **json.loads(current_kwargs),
+                        )
+                    if not isinstance(group_results, list):
+                        group_results = [group_results]
+                    results.extend({"result": numpy_to_std(r)} for r in group_results)
+                    current_group = []
+
+                # args[0] is guaranteed to be string, dict, or list of dicts
+                current_group.append(request.args[0])
+                current_kwargs = kwargs_key
+
+            # Process final group
+            if current_group:
+                if current_kwargs is None:
+                    raise ValueError("current_kwargs should not be None at this point")
+
+                with torch.no_grad():
+                    group_results = self.model.encode(
+                        current_group,
+                        batch_size=len(current_group),
+                        **json.loads(current_kwargs),
+                    )
+                if not isinstance(group_results, list):
+                    group_results = [group_results]
+                results.extend({"result": numpy_to_std(r)} for r in group_results)
+
+            return results
+
+        except Exception as e:
+            logger.error(f"Batch Inference Error: {e}", exc_info=True)
+            raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR)
+
     @web_app.post("/infer")
-    def infer(self, inference_request: InferenceRequest) -> dict:
+    async def infer(self, inference_request: BatchableInferenceRequest) -> dict:
         """
         **Request Format:**
         ```json
@@ -118,11 +205,15 @@ class SentenceTransformersModelDeployment:
         -d '{"args": [["First sentence", "Second sentence"]], "kwargs": {}}'
         ```
         """
-        args = inference_request.args
-        kwargs = inference_request.kwargs
         try:
-            with torch.no_grad():
-                return {"result": numpy_to_std(self.model.encode(*args, **kwargs))}
+            if self.batching_enabled:
+                return await self._batch_infer(inference_request)
+            else:
+                with torch.no_grad():
+                    result = self.model.encode(
+                        *inference_request.args, **inference_request.kwargs
+                    )
+                    return {"result": numpy_to_std(result)}
         except Exception as e:
             logger.error(f"Internal Server Error: {e}", exc_info=True)
             raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR)
@@ -144,6 +235,44 @@ class SentenceTransformersModelDeployment:
                 status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
                 detail="Endpoint is unhealthy. Basic model.encode() call failed.",
             )
+
+    @web_app.post("/reconfigure")
+    def reconfigure(
+        self, config: BatchingConfigUpdateRequest
+    ) -> BatchingConfigUpdateResponse:
+        try:
+            message = []
+            if config.max_batch_size is not None:
+                self._batch_infer.set_max_batch_size(config.max_batch_size)
+                self.max_batch_size = config.max_batch_size
+                message.append(f"max_batch_size updated to {config.max_batch_size}")
+
+            if config.batch_wait_timeout_s is not None:
+                self._batch_infer.set_batch_wait_timeout_s(config.batch_wait_timeout_s)
+                self.batch_wait_timeout_s = config.batch_wait_timeout_s
+                message.append(
+                    f"batch_wait_timeout_s updated to {config.batch_wait_timeout_s}"
+                )
+
+            return BatchingConfigUpdateResponse(
+                max_batch_size=self.max_batch_size,
+                batch_wait_timeout_s=self.batch_wait_timeout_s,
+                message=", ".join(message) if message else "No changes made",
+            )
+
+        except Exception as e:
+            logger.error(f"Configuration update failed: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=HTTPStatus.BAD_REQUEST,
+                detail=f"Failed to update configuration: {str(e)}",
+            )
+
+    @web_app.get("/batch_config")
+    def get_batch_config(self) -> BatchingConfig:
+        return BatchingConfig(
+            max_batch_size=self.max_batch_size,
+            batch_wait_timeout_s=self.batch_wait_timeout_s,
+        )
 
 
 def app_builder(args: dict) -> Application:

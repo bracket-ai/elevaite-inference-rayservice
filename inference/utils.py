@@ -37,11 +37,15 @@ class InferenceRequest(BaseModel):
 
 
 class BatchingConfig(BaseModel):
-    max_batch_size: int = Field(
-        gt=0, description="Maximum number of requests to batch together"
+    max_batch_size: int | None = Field(
+        default=None,
+        gt=0,
+        description="Maximum number of requests to batch together",
     )
-    batch_wait_timeout_s: float = Field(
-        ge=0, description="Maximum time to wait for batch to fill up in seconds"
+    batch_wait_timeout_s: float | None = Field(
+        default=None,
+        ge=0,
+        description="Maximum time to wait for batch to fill up in seconds",
     )
 
 

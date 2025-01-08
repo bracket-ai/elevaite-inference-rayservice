@@ -157,14 +157,6 @@ class SentenceTransformersModelDeployment:
         }
         ```
 
-        **Batch Processing:**
-        ```json
-        {
-            "args": [["First sentence", "Second sentence"]],
-            "kwargs": {}
-        }
-        ```
-
         **Example Python code:**
         ```python
         import requests

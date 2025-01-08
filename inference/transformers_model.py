@@ -73,47 +73,48 @@ class TransformersModelDeployment:
         # https://github.com/huggingface/transformers/blob/main/src/transformers/pipelines/base.py#L287-L290
         self.pipe = pipeline(**pipe_kwargs)
 
+        self._setup_batching()
+        self.max_batch_size = 5
+        self.batch_wait_timeout_s = 0.1
+
+    def _setup_batching(self):
+        """Set up batching configuration based on model task and capabilities."""
         # Text generation will not work with batching unless the model has a pad token id
         if self.task != "text-generation":
             self.batching_enabled = True
-        else:
-            self.batching_enabled = False
-            # First check if the tokenizer has a pad token id
-            if hasattr(self.pipe.tokenizer, "pad_token_id"):
-                logger.info("Found pad_token_id attribute in tokenizer")
-                if self.pipe.tokenizer.pad_token_id is not None:
-                    logger.info(
-                        f"Tokenizer has pad token id: {self.pipe.tokenizer.pad_token_id}"
+            return
+
+        self.batching_enabled = False
+        # First check if the tokenizer has a pad token id
+        if hasattr(self.pipe.tokenizer, "pad_token_id"):
+            logger.info("Found pad_token_id attribute in tokenizer")
+            if self.pipe.tokenizer.pad_token_id is not None:
+                logger.info(
+                    f"Tokenizer has pad token id: {self.pipe.tokenizer.pad_token_id}"
+                )
+                self.batching_enabled = True
+            else:
+                # Try to fall back to EOS token if available
+                logger.info("Pad token id is None, checking for EOS token as fallback")
+                if hasattr(self.pipe.model.config, "eos_token_id"):
+                    eos_token_id = (
+                        self.pipe.model.config.eos_token_id[0]
+                        if isinstance(self.pipe.model.config.eos_token_id, list)
+                        else self.pipe.model.config.eos_token_id
                     )
+                    logger.info(f"Setting pad token id to eos token id: {eos_token_id}")
+                    self.pipe.tokenizer.pad_token_id = eos_token_id
                     self.batching_enabled = True
                 else:
-                    # Try to fall back to EOS token if available
                     logger.info(
-                        "Pad token id is None, checking for EOS token as fallback"
+                        "No EOS token ID found for fallback. Batching will not be supported."
                     )
-                    if hasattr(self.pipe.model.config, "eos_token_id"):
-                        eos_token_id = (
-                            self.pipe.model.config.eos_token_id[0]
-                            if isinstance(self.pipe.model.config.eos_token_id, list)
-                            else self.pipe.model.config.eos_token_id
-                        )
-                        logger.info(
-                            f"Setting pad token id to eos token id: {eos_token_id}"
-                        )
-                        self.pipe.tokenizer.pad_token_id = eos_token_id
-                        self.batching_enabled = True
-                    else:
-                        logger.info(
-                            "No EOS token ID found for fallback. Batching will not be supported."
-                        )
-            else:
-                logger.info(
-                    "Tokenizer does not have pad_token_id attribute. Batching will not be supported."
-                )
+        else:
+            logger.info(
+                "Tokenizer does not have pad_token_id attribute. Batching will not be supported."
+            )
 
-            logger.info(f"Batching enabled: {self.batching_enabled}")
-            self.max_batch_size = 5
-            self.batch_wait_timeout_s = 0.1
+        logger.info(f"Batching enabled: {self.batching_enabled}")
 
     def _clear_cache(self):
         if str(self.pipe.device) == "cuda":
@@ -142,7 +143,11 @@ class TransformersModelDeployment:
             current_kwargs: str | None = None
 
             for request in requests:
-                kwargs_key = json.dumps(request.kwargs, sort_keys=True)
+                # Handle None kwargs by converting to empty dict
+                kwargs_to_serialize = (
+                    request.kwargs if request.kwargs is not None else {}
+                )
+                kwargs_key = json.dumps(kwargs_to_serialize, sort_keys=True)
 
                 # If the kwargs have changed and we have a current group, perform inference
                 if kwargs_key != current_kwargs and current_group:

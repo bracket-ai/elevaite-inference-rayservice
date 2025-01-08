@@ -3,7 +3,8 @@ from typing import Any, Dict, List
 
 import numpy as np
 import torch.cuda
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+from typing_extensions import Self
 
 
 def numpy_to_std(obj):
@@ -47,6 +48,14 @@ class BatchingConfig(BaseModel):
         ge=0,
         description="Maximum time to wait for batch to fill up in seconds",
     )
+
+    @model_validator(mode="before")
+    def validate_at_least_one_not_null(self) -> Self:
+        if self.max_batch_size is None and self.batch_wait_timeout_s is None:
+            raise ValueError(
+                "At least one of max_batch_size or batch_wait_timeout_s must be non-null"
+            )
+        return self
 
 
 class BatchableInferenceRequest(InferenceRequest):

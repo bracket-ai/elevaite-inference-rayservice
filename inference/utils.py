@@ -37,7 +37,7 @@ class InferenceRequest(BaseModel):
     kwargs: Dict[str, Any] = Field(default={})
 
 
-class BatchingConfig(BaseModel):
+class BatchingConfigUpdateRequest(BaseModel):
     max_batch_size: int | None = Field(
         default=None,
         gt=0,
@@ -56,6 +56,15 @@ class BatchingConfig(BaseModel):
                 "At least one of max_batch_size or batch_wait_timeout_s must be non-null"
             )
         return self
+
+
+class BatchingConfig(BaseModel):
+    max_batch_size: int | None
+    batch_wait_timeout_s: float | None
+
+
+class BatchingConfigUpdateResponse(BatchingConfig):
+    message: str
 
 
 class BatchableInferenceRequest(InferenceRequest):

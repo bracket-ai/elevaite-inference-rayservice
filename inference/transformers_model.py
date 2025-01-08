@@ -9,7 +9,14 @@ from ray import serve
 from ray.serve import Application
 from transformers import pipeline
 
-from inference.utils import BatchableInferenceRequest,BatchingConfig, dtype_mapping, numpy_to_std
+from inference.utils import (
+    BatchableInferenceRequest,
+    BatchingConfig,
+    BatchingConfigUpdateRequest,
+    BatchingConfigUpdateResponse,
+    dtype_mapping,
+    numpy_to_std,
+)
 
 SUPPORTED_HEALTH_CHECK_TASKS = {
     "feature-extraction",
@@ -273,7 +280,9 @@ class TransformersModelDeployment:
             self._clear_cache()
 
     @web_app.post("/reconfigure")
-    def reconfigure(self, config: BatchingConfig) -> dict:
+    def reconfigure(
+        self, config: BatchingConfigUpdateRequest
+    ) -> BatchingConfigUpdateResponse:
         """Update batch processing configuration."""
         if not self.batching_enabled:
             raise HTTPException(
@@ -282,21 +291,25 @@ class TransformersModelDeployment:
             )
 
         try:
+            message = []
             if config.max_batch_size is not None:
                 self._batch_infer.set_max_batch_size(config.max_batch_size)
                 self.max_batch_size = config.max_batch_size
+                message.append(f"max_batch_size updated to {config.max_batch_size}")
 
             if config.batch_wait_timeout_s is not None:
                 self._batch_infer.set_batch_wait_timeout_s(config.batch_wait_timeout_s)
                 self.batch_wait_timeout_s = config.batch_wait_timeout_s
+                message.append(
+                    f"batch_wait_timeout_s updated to {config.batch_wait_timeout_s}"
+                )
 
-            return {
-                "message": "Configuration updated successfully",
-                "current_config": {
-                    "max_batch_size": self.max_batch_size,
-                    "batch_wait_timeout_s": self.batch_wait_timeout_s,
-                },
-            }
+            return BatchingConfigUpdateResponse(
+                max_batch_size=self.max_batch_size,
+                batch_wait_timeout_s=self.batch_wait_timeout_s,
+                message=", ".join(message) if message else "No changes made",
+            )
+
         except Exception as e:
             logger.error(f"Configuration update failed: {e}", exc_info=True)
             raise HTTPException(
@@ -305,12 +318,12 @@ class TransformersModelDeployment:
             )
 
     @web_app.get("/batch_config")
-    def get_batch_config(self) -> dict:
+    def get_batch_config(self) -> BatchingConfig:
         """Get current batch processing configuration."""
-        return {
-            "max_batch_size": self.max_batch_size,
-            "batch_wait_timeout_s": self.batch_wait_timeout_s,
-        }
+        return BatchingConfig(
+            max_batch_size=self.max_batch_size,
+            batch_wait_timeout_s=self.batch_wait_timeout_s,
+        )
 
 
 def app_builder(args: dict) -> Application:

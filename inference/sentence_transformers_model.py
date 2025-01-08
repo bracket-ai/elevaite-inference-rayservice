@@ -111,14 +111,19 @@ class SentenceTransformersModelDeployment:
 
                     # Process current group
                     with torch.no_grad():
+                        # returns a numpy.ndarray of shape (n_sentences, embedding_dim)
                         group_results = self.model.encode(
                             current_group,
                             batch_size=len(current_group),
                             **json.loads(current_kwargs),
                         )
-                    if not isinstance(group_results, list):
-                        group_results = [group_results]
-                    results.extend({"result": numpy_to_std(r)} for r in group_results)
+
+                    if len(group_results.shape) == 2:  # 2D array (batch, embedding_dim)
+                        results.extend(
+                            {"result": numpy_to_std(row)} for row in group_results
+                        )
+                    else:  # Handle case where there's only one dimension
+                        results.append({"result": numpy_to_std(group_results)})
                     current_group = []
 
                 # args[0] is guaranteed to be string, dict, or list of dicts
@@ -136,9 +141,12 @@ class SentenceTransformersModelDeployment:
                         batch_size=len(current_group),
                         **json.loads(current_kwargs),
                     )
-                if not isinstance(group_results, list):
-                    group_results = [group_results]
-                results.extend({"result": numpy_to_std(r)} for r in group_results)
+                if len(group_results.shape) == 2:  # 2D array (batch, embedding_dim)
+                    results.extend(
+                        {"result": numpy_to_std(row)} for row in group_results
+                    )
+                else:  # Handle case where there's only one dimension
+                    results.append({"result": numpy_to_std(group_results)})
 
             return results
 

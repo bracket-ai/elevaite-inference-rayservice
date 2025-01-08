@@ -192,7 +192,10 @@ class TransformersModelDeployment:
             # Basic inference test
             # If this errors, the health check will fail.
             with torch.no_grad():
-                self.pipe("Is this thing on?", max_new_tokens=10)
+                if self.task == "text-generation":
+                    self.pipe("Is this thing on?", max_new_tokens=10)
+                else:
+                    self.pipe("Is this thing on?")
 
             logger.info("Health check passed")
             return {"status": "healthy"}

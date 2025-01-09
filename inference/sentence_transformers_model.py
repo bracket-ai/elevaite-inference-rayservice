@@ -9,7 +9,6 @@ from ray import serve
 from ray.serve import Application
 from sentence_transformers import SentenceTransformer
 
-<<<<<<< HEAD:inference/sentence_transformers_model.py
 from inference.utils import (
     BatchableInferenceRequest,
     BatchingConfig,
@@ -18,16 +17,6 @@ from inference.utils import (
     dtype_mapping,
     numpy_to_std,
 )
-=======
-from utils import (
-    BatchableInferenceRequest,
-    BatchingConfig,
-    BatchingConfigUpdateRequest,
-    BatchingConfigUpdateResponse,
-    dtype_mapping,
-    numpy_to_std,
-)
->>>>>>> a729742 (st to allow batching):sentence_transformers_model.py
 
 logger = logging.getLogger("ray.serve")
 

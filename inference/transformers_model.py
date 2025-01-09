@@ -34,7 +34,7 @@ logger = logging.getLogger("ray.serve")
 web_app = FastAPI()
 
 
-@serve.deployment(health_check_period_s=30, max_ongoing_requests=1000)
+@serve.deployment(health_check_period_s=30, max_ongoing_requests=100)
 @serve.ingress(web_app)
 class TransformersModelDeployment:
     def __init__(

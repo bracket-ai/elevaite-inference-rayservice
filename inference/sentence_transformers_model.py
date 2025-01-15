@@ -93,68 +93,58 @@ class SentenceTransformersModelDeployment:
         After inference, the results are returned in the same order as the requests were
         submitted.
         """
-        try:
-            logger.info(f"Starting batch call with {len(requests)} requests")
-            results: list[dict] = []
+        logger.info(f"Starting batch call with {len(requests)} requests")
+        results: list[dict] = []
 
-            # Group by kwargs since encode() supports different options
-            current_sub_batch_args: list[Any] = []
-            current_sub_batch_kwargs_key: str = "{}"
+        # Group by kwargs since encode() supports different options
+        current_sub_batch_args: list[Any] = []
+        current_sub_batch_kwargs_key: str = "{}"
 
-            for request in requests:
-                kwargs_to_serialize = request.kwargs or {}
-                kwargs_key = json.dumps(kwargs_to_serialize, sort_keys=True)
+        for request in requests:
+            kwargs_to_serialize = request.kwargs or {}
+            kwargs_key = json.dumps(kwargs_to_serialize, sort_keys=True)
 
-                # If the kwargs have changed and we have a current group, perform inference
-                if (
-                    kwargs_key != current_sub_batch_kwargs_key
-                    and current_sub_batch_args
-                ):
+            # If the kwargs have changed and we have a current group, perform inference
+            if kwargs_key != current_sub_batch_kwargs_key and current_sub_batch_args:
 
-                    # Process current group
-                    with torch.no_grad():
-                        # returns a numpy.ndarray of shape (n_sentences, embedding_dim)
-                        sub_batch_results = self.model.encode(
-                            current_sub_batch_args,
-                            batch_size=len(current_sub_batch_args),
-                            **json.loads(current_sub_batch_kwargs_key),
-                        )
-
-                    if (
-                        len(sub_batch_results.shape) == 2
-                    ):  # 2D array (batch, embedding_dim)
-                        results.extend(
-                            {"result": numpy_to_std(row)} for row in sub_batch_results
-                        )
-                    else:  # Handle case where there's only one dimension (single embedding)
-                        results.append({"result": numpy_to_std(sub_batch_results)})
-                    current_sub_batch_args = []
-
-                # args[0] is guaranteed to be string, dict, or list of dicts
-                current_sub_batch_args.append(request.args[0])
-                current_sub_batch_kwargs_key = kwargs_key
-
-            # Process final group
-            if current_sub_batch_args:
-
+                # Process current group
                 with torch.no_grad():
+                    # returns a numpy.ndarray of shape (n_sentences, embedding_dim)
                     sub_batch_results = self.model.encode(
                         current_sub_batch_args,
                         batch_size=len(current_sub_batch_args),
                         **json.loads(current_sub_batch_kwargs_key),
                     )
+
                 if len(sub_batch_results.shape) == 2:  # 2D array (batch, embedding_dim)
                     results.extend(
                         {"result": numpy_to_std(row)} for row in sub_batch_results
                     )
-                else:  # Handle case where there's only one dimension
+                else:  # Handle case where there's only one dimension (single embedding)
                     results.append({"result": numpy_to_std(sub_batch_results)})
+                current_sub_batch_args = []
 
-            return results
+            # args[0] is guaranteed to be string, dict, or list of dicts
+            current_sub_batch_args.append(request.args[0])
+            current_sub_batch_kwargs_key = kwargs_key
 
-        except Exception as e:
-            logger.error(f"Batch Inference Error: {e}", exc_info=True)
-            raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR)
+        # Process final group
+        if current_sub_batch_args:
+
+            with torch.no_grad():
+                sub_batch_results = self.model.encode(
+                    current_sub_batch_args,
+                    batch_size=len(current_sub_batch_args),
+                    **json.loads(current_sub_batch_kwargs_key),
+                )
+            if len(sub_batch_results.shape) == 2:  # 2D array (batch, embedding_dim)
+                results.extend(
+                    {"result": numpy_to_std(row)} for row in sub_batch_results
+                )
+            else:  # Handle case where there's only one dimension
+                results.append({"result": numpy_to_std(sub_batch_results)})
+
+        return results
 
     @web_app.post("/infer")
     async def infer(self, inference_request: BatchableInferenceRequest) -> dict:

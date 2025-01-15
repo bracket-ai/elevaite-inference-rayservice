@@ -146,61 +146,24 @@ class TransformersModelDeployment:
         submitted.
         """
 
-        try:
-            logger.info(f"Starting batch call with {len(requests)} requests")
-            results: list[dict] = []
+        logger.info(f"Starting batch call with {len(requests)} requests")
+        results: list[dict] = []
 
-            # group consecutive requests with the same kwargs
-            current_sub_batch_args: list[Any] = []
-            current_sub_batch_kwargs_key: str = "{}"
+        # group consecutive requests with the same kwargs
+        current_sub_batch_args: list[Any] = []
+        current_sub_batch_kwargs_key: str = "{}"
 
-            for request in requests:
-                kwargs_to_serialize = request.kwargs or {}
-                kwargs_key = json.dumps(kwargs_to_serialize, sort_keys=True)
+        for request in requests:
+            kwargs_to_serialize = request.kwargs or {}
+            kwargs_key = json.dumps(kwargs_to_serialize, sort_keys=True)
 
-                # If the kwargs have changed and we have a current sub-batch, perform inference
-                if (
-                    kwargs_key != current_sub_batch_kwargs_key
-                    and current_sub_batch_args
-                ):
+            # If the kwargs have changed and we have a current sub-batch, perform inference
+            if kwargs_key != current_sub_batch_kwargs_key and current_sub_batch_args:
 
-                    # perform inference for the current sub-batch
-                    self._clear_cache()
-                    logger.info(
-                        f"Performing batch inference with batch size: {len(current_sub_batch_args)}"
-                    )
-                    with torch.no_grad():
-                        sub_batch_results = self.pipe(
-                            current_sub_batch_args,
-                            **{
-                                **json.loads(current_sub_batch_kwargs_key),
-                                "batch_size": len(current_sub_batch_args),
-                            },
-                        )
-
-                    if not isinstance(sub_batch_results, list):
-                        sub_batch_results = [sub_batch_results]
-
-                    logger.info(
-                        f"Batch inference completed. Results length: {len(sub_batch_results)}"
-                    )
-                    results.extend(
-                        {"result": numpy_to_std(r)} for r in sub_batch_results
-                    )
-
-                    current_sub_batch_args = []
-
-                # Args is only ever length 1
-                # args[0] is only ever a list of dicts or a string, so we are safe to append it
-                current_sub_batch_args.append(request.args[0])
-                current_sub_batch_kwargs_key = kwargs_key
-
-            # perform inference for the last sub-batch
-            if current_sub_batch_args:
-
+                # perform inference for the current sub-batch
                 self._clear_cache()
                 logger.info(
-                    f"Performing batch inference for the last sub-batch with batch size: {len(current_sub_batch_args)}"
+                    f"Performing batch inference with batch size: {len(current_sub_batch_args)}"
                 )
                 with torch.no_grad():
                     sub_batch_results = self.pipe(
@@ -211,21 +174,46 @@ class TransformersModelDeployment:
                         },
                     )
 
-                    if not isinstance(sub_batch_results, list):
-                        sub_batch_results = [sub_batch_results]
+                if not isinstance(sub_batch_results, list):
+                    sub_batch_results = [sub_batch_results]
 
-                    logger.info(
-                        f"Batch inference completed. Results length: {len(sub_batch_results)}"
-                    )
-                    results.extend(
-                        {"result": numpy_to_std(r)} for r in sub_batch_results
-                    )
+                logger.info(
+                    f"Batch inference completed. Results length: {len(sub_batch_results)}"
+                )
+                results.extend({"result": numpy_to_std(r)} for r in sub_batch_results)
 
-            return results
+                current_sub_batch_args = []
 
-        except Exception as e:
-            logger.error(f"Batch Inference Error: {e}", exc_info=True)
-            raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR)
+            # Args is only ever length 1
+            # args[0] is only ever a list of dicts or a string, so we are safe to append it
+            current_sub_batch_args.append(request.args[0])
+            current_sub_batch_kwargs_key = kwargs_key
+
+        # perform inference for the last sub-batch
+        if current_sub_batch_args:
+
+            self._clear_cache()
+            logger.info(
+                f"Performing batch inference for the last sub-batch with batch size: {len(current_sub_batch_args)}"
+            )
+            with torch.no_grad():
+                sub_batch_results = self.pipe(
+                    current_sub_batch_args,
+                    **{
+                        **json.loads(current_sub_batch_kwargs_key),
+                        "batch_size": len(current_sub_batch_args),
+                    },
+                )
+
+                if not isinstance(sub_batch_results, list):
+                    sub_batch_results = [sub_batch_results]
+
+                logger.info(
+                    f"Batch inference completed. Results length: {len(sub_batch_results)}"
+                )
+                results.extend({"result": numpy_to_std(r)} for r in sub_batch_results)
+
+        return results
 
     @web_app.post("/infer")
     async def infer(self, inference_request: BatchableInferenceRequest) -> dict:

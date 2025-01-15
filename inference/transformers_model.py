@@ -127,9 +127,23 @@ class TransformersModelDeployment:
         self, requests: List[BatchableInferenceRequest]
     ) -> List[dict]:
         """
-        Perform batch inference using the model pipeline.
-        Batched inference for a set of requests requires that all requests have the same kwargs.
-        This function groups requests by kwargs and performs parallel inference for each group serially.
+        Transformers pipelines support batching, but only for a single set of kwargs per
+        batch of inputs. However, Ray's own batch handler constructs batches of requests with no
+        consideration for each request's contents. In order to allow batching while
+        respecting the kwargs of each request, this function takes a Ray-compiled batch of
+        requests and decomposes it into sub-batches where all requests have the same kwargs,
+        while preserving the order of the requests. It then performs parallel inference for
+        each sub-batch-kwargs pair, one at a time.
+
+        Example: Given a set of possible kwargs {A, B} and a Ray-compiled batch of
+        requests where both sets of kwargs are present, this function will group the Ray batch
+        into four sub-batches:
+
+            AAAABBAB -> 1: [AAAA], 2: [BB], 3: [A], 4: [B]
+
+        and parallelize inference within each sub-batch. So instead of 8 calls, we only make 4.
+        After inference, the results are returned in the same order as the requests were
+        submitted.
         """
 
         try:
@@ -137,72 +151,75 @@ class TransformersModelDeployment:
             results: List[dict] = []
 
             # group consecutive requests with the same kwargs
-            current_group: List[Any] = []
-            current_kwargs_key: str = "{}"
+            current_sub_batch_args: List[Any] = []
+            current_sub_batch_kwargs_key: str = "{}"
 
             for request in requests:
                 kwargs_to_serialize = request.kwargs or {}
                 kwargs_key = json.dumps(kwargs_to_serialize, sort_keys=True)
 
-                # If the kwargs have changed and we have a current group, perform inference
-                if kwargs_key != current_kwargs_key and current_group:
+                # If the kwargs have changed and we have a current sub-batch, perform inference
+                if (
+                    kwargs_key != current_sub_batch_kwargs_key
+                    and current_sub_batch_args
+                ):
 
-                    # perform inference for the current group
+                    # perform inference for the current sub-batch
                     self._clear_cache()
                     logger.info(
-                        f"Performing batch inference with batch size: {len(current_group)}"
+                        f"Performing batch inference with batch size: {len(current_sub_batch_args)}"
                     )
                     with torch.no_grad():
-                        group_results = self.pipe(
-                            current_group,
+                        sub_batch_results = self.pipe(
+                            current_sub_batch_args,
                             **{
-                                **json.loads(current_kwargs_key),
-                                "batch_size": len(current_group),
+                                **json.loads(current_sub_batch_kwargs_key),
+                                "batch_size": len(current_sub_batch_args),
                             },
                         )
 
-                    if not isinstance(group_results, list):
-                        group_results = [group_results]
+                    if not isinstance(sub_batch_results, list):
+                        sub_batch_results = [sub_batch_results]
 
                     logger.info(
-                        f"Batch inference completed. Results length: {len(group_results)}"
+                        f"Batch inference completed. Results length: {len(sub_batch_results)}"
                     )
-                    results.extend({"result": numpy_to_std(r)} for r in group_results)
+                    results.extend(
+                        {"result": numpy_to_std(r)} for r in sub_batch_results
+                    )
 
-                    current_group = []
+                    current_sub_batch_args = []
 
                 # Args is only ever length 1
                 # args[0] is only ever a list of dicts or a string, so we are safe to append it
-                current_group.append(request.args[0])
-                current_kwargs_key = kwargs_key
+                current_sub_batch_args.append(request.args[0])
+                current_sub_batch_kwargs_key = kwargs_key
 
-            # perform inference for the last group
-            if current_group:
-                if current_kwargs_key is None:
-                    raise ValueError(
-                        "current_kwargs_key should not be None at this point"
-                    )
+            # perform inference for the last sub-batch
+            if current_sub_batch_args:
 
                 self._clear_cache()
                 logger.info(
-                    f"Performing batch inference for the last group with batch size: {len(current_group)}"
+                    f"Performing batch inference for the last sub-batch with batch size: {len(current_sub_batch_args)}"
                 )
                 with torch.no_grad():
-                    group_results = self.pipe(
-                        current_group,
+                    sub_batch_results = self.pipe(
+                        current_sub_batch_args,
                         **{
-                            **json.loads(current_kwargs_key),
-                            "batch_size": len(current_group),
+                            **json.loads(current_sub_batch_kwargs_key),
+                            "batch_size": len(current_sub_batch_args),
                         },
                     )
 
-                    if not isinstance(group_results, list):
-                        group_results = [group_results]
+                    if not isinstance(sub_batch_results, list):
+                        sub_batch_results = [sub_batch_results]
 
                     logger.info(
-                        f"Batch inference completed. Results length: {len(group_results)}"
+                        f"Batch inference completed. Results length: {len(sub_batch_results)}"
                     )
-                    results.extend({"result": numpy_to_std(r)} for r in group_results)
+                    results.extend(
+                        {"result": numpy_to_std(r)} for r in sub_batch_results
+                    )
 
             return results
 

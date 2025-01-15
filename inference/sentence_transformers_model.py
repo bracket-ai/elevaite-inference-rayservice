@@ -74,61 +74,81 @@ class SentenceTransformersModelDeployment:
     async def _batch_infer(
         self, requests: List[BatchableInferenceRequest]
     ) -> List[dict]:
+        """
+        SentenceTransformers models support batching, but only for a single set of kwargs per
+        batch of inputs. However, Ray's own batch handler constructs batches of requests with no
+        consideration for each request's contents. In order to allow batching while
+        respecting the kwargs of each request, this function takes a Ray-compiled batch of
+        requests and decomposes them into sub-batches where all requests have the same kwargs,
+        while preserving the order of the requests. It then performs parallel inference for
+        each sub-batch-kwargs pair, one at a time.
+
+        Example: Given a set of possible kwargs {A, B} and a Ray-compiled batch of
+        requests where both sets of kwargs are present, this function will group the Ray batch
+        into four sub-batches:
+
+            AAAABBAB -> 1: [AAAA], 2: [BB], 3: [A], 4: [B]
+
+        and parallelize inference within each sub-batch. So instead of 8 calls, we only make 4.
+        After inference, the results are returned in the same order as the requests were
+        submitted.
+        """
         try:
             logger.info(f"Starting batch call with {len(requests)} requests")
+            results: List[dict] = []
 
             # Group by kwargs since encode() supports different options
-            current_group: List[Any] = []
-            current_kwargs_key: str = "{}"
-            results: List[dict] = []
+            current_sub_batch_args: List[Any] = []
+            current_sub_batch_kwargs_key: str = "{}"
 
             for request in requests:
                 kwargs_to_serialize = request.kwargs or {}
                 kwargs_key = json.dumps(kwargs_to_serialize, sort_keys=True)
 
                 # If the kwargs have changed and we have a current group, perform inference
-                if kwargs_key != current_kwargs_key and current_group:
+                if (
+                    kwargs_key != current_sub_batch_kwargs_key
+                    and current_sub_batch_args
+                ):
 
                     # Process current group
                     with torch.no_grad():
                         # returns a numpy.ndarray of shape (n_sentences, embedding_dim)
-                        group_results = self.model.encode(
-                            current_group,
-                            batch_size=len(current_group),
-                            **json.loads(current_kwargs_key),
+                        sub_batch_results = self.model.encode(
+                            current_sub_batch_args,
+                            batch_size=len(current_sub_batch_args),
+                            **json.loads(current_sub_batch_kwargs_key),
                         )
 
-                    if len(group_results.shape) == 2:  # 2D array (batch, embedding_dim)
+                    if (
+                        len(sub_batch_results.shape) == 2
+                    ):  # 2D array (batch, embedding_dim)
                         results.extend(
-                            {"result": numpy_to_std(row)} for row in group_results
+                            {"result": numpy_to_std(row)} for row in sub_batch_results
                         )
-                    else:  # Handle case where there's only one dimension
-                        results.append({"result": numpy_to_std(group_results)})
-                    current_group = []
+                    else:  # Handle case where there's only one dimension (single embedding)
+                        results.append({"result": numpy_to_std(sub_batch_results)})
+                    current_sub_batch_args = []
 
                 # args[0] is guaranteed to be string, dict, or list of dicts
-                current_group.append(request.args[0])
-                current_kwargs_key = kwargs_key
+                current_sub_batch_args.append(request.args[0])
+                current_sub_batch_kwargs_key = kwargs_key
 
             # Process final group
-            if current_group:
-                if current_kwargs_key is None:
-                    raise ValueError(
-                        "current_kwargs_key should not be None at this point"
-                    )
+            if current_sub_batch_args:
 
                 with torch.no_grad():
-                    group_results = self.model.encode(
-                        current_group,
-                        batch_size=len(current_group),
-                        **json.loads(current_kwargs_key),
+                    sub_batch_results = self.model.encode(
+                        current_sub_batch_args,
+                        batch_size=len(current_sub_batch_args),
+                        **json.loads(current_sub_batch_kwargs_key),
                     )
-                if len(group_results.shape) == 2:  # 2D array (batch, embedding_dim)
+                if len(sub_batch_results.shape) == 2:  # 2D array (batch, embedding_dim)
                     results.extend(
-                        {"result": numpy_to_std(row)} for row in group_results
+                        {"result": numpy_to_std(row)} for row in sub_batch_results
                     )
                 else:  # Handle case where there's only one dimension
-                    results.append({"result": numpy_to_std(group_results)})
+                    results.append({"result": numpy_to_std(sub_batch_results)})
 
             return results
 

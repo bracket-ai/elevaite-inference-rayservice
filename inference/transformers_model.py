@@ -138,22 +138,14 @@ class TransformersModelDeployment:
 
             # group consecutive requests with the same kwargs
             current_group: List[Any] = []
-            current_kwargs_key: str | None = None
+            current_kwargs_key: str = "{}"
 
             for request in requests:
-                # Handle None kwargs by converting to empty dict
-                kwargs_to_serialize = (
-                    request.kwargs if request.kwargs is not None else {}
-                )
+                kwargs_to_serialize = request.kwargs or {}
                 kwargs_key = json.dumps(kwargs_to_serialize, sort_keys=True)
 
                 # If the kwargs have changed and we have a current group, perform inference
                 if kwargs_key != current_kwargs_key and current_group:
-
-                    if current_kwargs_key is None:
-                        raise ValueError(
-                            "current_kwargs_key should not be None at this point"
-                        )
 
                     # perform inference for the current group
                     self._clear_cache()

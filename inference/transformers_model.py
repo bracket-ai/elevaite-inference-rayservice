@@ -138,7 +138,7 @@ class TransformersModelDeployment:
 
             # group consecutive requests with the same kwargs
             current_group: List[Any] = []
-            current_kwargs: str | None = None
+            current_kwargs_key: str | None = None
 
             for request in requests:
                 # Handle None kwargs by converting to empty dict
@@ -148,11 +148,11 @@ class TransformersModelDeployment:
                 kwargs_key = json.dumps(kwargs_to_serialize, sort_keys=True)
 
                 # If the kwargs have changed and we have a current group, perform inference
-                if kwargs_key != current_kwargs and current_group:
+                if kwargs_key != current_kwargs_key and current_group:
 
-                    if current_kwargs is None:
+                    if current_kwargs_key is None:
                         raise ValueError(
-                            "current_kwargs should not be None at this point"
+                            "current_kwargs_key should not be None at this point"
                         )
 
                     # perform inference for the current group
@@ -164,7 +164,7 @@ class TransformersModelDeployment:
                         group_results = self.pipe(
                             current_group,
                             **{
-                                **json.loads(current_kwargs),
+                                **json.loads(current_kwargs_key),
                                 "batch_size": len(current_group),
                             },
                         )
@@ -182,12 +182,14 @@ class TransformersModelDeployment:
                 # Args is only ever length 1
                 # args[0] is only ever a list of dicts or a string, so we are safe to append it
                 current_group.append(request.args[0])
-                current_kwargs = kwargs_key
+                current_kwargs_key = kwargs_key
 
             # perform inference for the last group
             if current_group:
-                if current_kwargs is None:
-                    raise ValueError("current_kwargs should not be None at this point")
+                if current_kwargs_key is None:
+                    raise ValueError(
+                        "current_kwargs_key should not be None at this point"
+                    )
 
                 self._clear_cache()
                 logger.info(
@@ -197,7 +199,7 @@ class TransformersModelDeployment:
                     group_results = self.pipe(
                         current_group,
                         **{
-                            **json.loads(current_kwargs),
+                            **json.loads(current_kwargs_key),
                             "batch_size": len(current_group),
                         },
                     )

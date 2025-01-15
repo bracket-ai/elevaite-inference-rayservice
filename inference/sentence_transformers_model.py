@@ -79,7 +79,7 @@ class SentenceTransformersModelDeployment:
 
             # Group by kwargs since encode() supports different options
             current_group: List[Any] = []
-            current_kwargs: str | None = None
+            current_kwargs_key: str | None = None
             results: List[dict] = []
 
             for request in requests:
@@ -89,11 +89,11 @@ class SentenceTransformersModelDeployment:
                 )
                 kwargs_key = json.dumps(kwargs_to_serialize, sort_keys=True)
 
-                if kwargs_key != current_kwargs and current_group:
+                if kwargs_key != current_kwargs_key and current_group:
 
-                    if current_kwargs is None:
+                    if current_kwargs_key is None:
                         raise ValueError(
-                            "current_kwargs should not be None at this point"
+                            "current_kwargs_key should not be None at this point"
                         )
 
                     # Process current group
@@ -102,7 +102,7 @@ class SentenceTransformersModelDeployment:
                         group_results = self.model.encode(
                             current_group,
                             batch_size=len(current_group),
-                            **json.loads(current_kwargs),
+                            **json.loads(current_kwargs_key),
                         )
 
                     if len(group_results.shape) == 2:  # 2D array (batch, embedding_dim)
@@ -115,18 +115,20 @@ class SentenceTransformersModelDeployment:
 
                 # args[0] is guaranteed to be string, dict, or list of dicts
                 current_group.append(request.args[0])
-                current_kwargs = kwargs_key
+                current_kwargs_key = kwargs_key
 
             # Process final group
             if current_group:
-                if current_kwargs is None:
-                    raise ValueError("current_kwargs should not be None at this point")
+                if current_kwargs_key is None:
+                    raise ValueError(
+                        "current_kwargs_key should not be None at this point"
+                    )
 
                 with torch.no_grad():
                     group_results = self.model.encode(
                         current_group,
                         batch_size=len(current_group),
-                        **json.loads(current_kwargs),
+                        **json.loads(current_kwargs_key),
                     )
                 if len(group_results.shape) == 2:  # 2D array (batch, embedding_dim)
                     results.extend(

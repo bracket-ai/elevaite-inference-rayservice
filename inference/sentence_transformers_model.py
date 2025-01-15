@@ -1,7 +1,7 @@
 import json
 import logging
 from http import HTTPStatus
-from typing import Any, List
+from typing import Any
 
 import torch.cuda
 from fastapi import FastAPI, HTTPException
@@ -72,8 +72,8 @@ class SentenceTransformersModelDeployment:
 
     @serve.batch(max_batch_size=32, batch_wait_timeout_s=0.1)
     async def _batch_infer(
-        self, requests: List[BatchableInferenceRequest]
-    ) -> List[dict]:
+        self, requests: list[BatchableInferenceRequest]
+    ) -> list[dict]:
         """
         SentenceTransformers models support batching, but only for a single set of kwargs per
         batch of inputs. However, Ray's own batch handler constructs batches of requests with no
@@ -95,10 +95,10 @@ class SentenceTransformersModelDeployment:
         """
         try:
             logger.info(f"Starting batch call with {len(requests)} requests")
-            results: List[dict] = []
+            results: list[dict] = []
 
             # Group by kwargs since encode() supports different options
-            current_sub_batch_args: List[Any] = []
+            current_sub_batch_args: list[Any] = []
             current_sub_batch_kwargs_key: str = "{}"
 
             for request in requests:

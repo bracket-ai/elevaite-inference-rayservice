@@ -78,12 +78,15 @@ class TransformersModelDeployment:
 
     def _setup_batching(self):
         """Set up batching configuration based on model task and capabilities."""
+        # Set default value
+        self.batching_enabled = False
+
         # Text generation will not work with batching unless the model has a pad token id
         if self.task != "text-generation":
             self.batching_enabled = True
             return
 
-        self.batching_enabled = False
+        # If task = text-generation, check if the tokenizer has a pad token id
         # First check if the tokenizer has a pad token id
         if hasattr(self.pipe.tokenizer, "pad_token_id"):
             logger.info("Found pad_token_id attribute in tokenizer")
@@ -123,7 +126,7 @@ class TransformersModelDeployment:
     def model_device(self) -> str:
         return str(self.pipe.device)
 
-    @serve.batch(max_batch_size=5, batch_wait_timeout_s=0.1)
+    @serve.batch(max_batch_size=16, batch_wait_timeout_s=0.1)
     async def _batch_infer(self, requests: list[InferenceRequest]) -> list[dict]:
         """
         Transformers pipelines support batching, but only for a single set of adttional

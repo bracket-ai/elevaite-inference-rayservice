@@ -197,6 +197,14 @@ class SentenceTransformersModelDeployment:
         -d '{"args": [["First sentence", "Second sentence"]], "kwargs": {}}'
         ```
         """
+
+        if not inference_request.args:
+            logger.error("Received request with empty args")
+            raise HTTPException(
+                status_code=HTTPStatus.BAD_REQUEST,
+                detail="Request args cannot be empty",
+            )
+
         try:
             if self.batching_enabled:
                 return await self._batch_infer(inference_request)

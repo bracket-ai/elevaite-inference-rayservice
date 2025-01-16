@@ -282,6 +282,14 @@ class TransformersModelDeployment:
         }'
         ```
         """
+
+        if not inference_request.args:
+            logger.error("Received request with empty args")
+            raise HTTPException(
+                status_code=HTTPStatus.BAD_REQUEST,
+                detail="Request args cannot be empty",
+            )
+
         if self.batching_enabled:
             try:
                 return await self._batch_infer(inference_request)

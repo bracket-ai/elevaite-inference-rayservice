@@ -3,7 +3,7 @@ from typing import Any, Dict, List
 
 import numpy as np
 import torch.cuda
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, model_validator
 from typing_extensions import Self
 
 
@@ -67,24 +67,35 @@ class BatchingConfigUpdateResponse(BatchingConfig):
     message: str
 
 
-class BatchableInferenceRequest(InferenceRequest):
-    @field_validator("args", mode="before")
-    def validate_args(cls, v):
-        if not isinstance(v, list):
-            raise ValueError("args must be a list")
-        if len(v) != 1:
-            raise ValueError(f"args must contain exactly one item (got {len(v)} items)")
+def is_batchable_inference_request(request: InferenceRequest) -> bool:
+    """
+    Check if an inference request is batchable.
 
-        arg = v[0]
-        # Must be either a string, dict, or a list of dicts
-        # list of dicts is used for tasks like text-generation and document-qa
-        # https://github.com/huggingface/transformers/blob/main/src/transformers/pipelines/text_generation.py#L264
-        if isinstance(arg, (str, dict)):
-            return v
-        if isinstance(arg, list) and all(isinstance(item, dict) for item in arg):
-            return v
+    A request is batchable if it has a single argument that is either a string,
+    a dictionary, or a list of dictionaries.
+    """
 
-        raise ValueError("args[0] must be either a string or a list of dictionaries")
+    # If a request has no args, it is not batchable
+    # TODO: Support kwargs-only requests for sentence-transformers, which has only
+    # 'sentences' as the argument for inputs to be encoded
+    if not request.args:
+        return False
+
+    # If a request has more than one values in args, it is likely able to be batch processed
+    # on its own, but cannot be processed with Elevaite's dynamic request batching, which
+    # opportunistically constructs batches out of incoming requests.
+    if len(request.args) != 1:
+        return False
+
+    arg = request.args[0]
+    # Must be either a string, dict, or a list of dicts
+    # list of dicts is a common pattern used for tasks like text-generation and document-qa
+    # https://github.com/huggingface/transformers/blob/main/src/transformers/pipelines/text_generation.py#L264
+    if isinstance(arg, (str, dict)):
+        return True
+    if isinstance(arg, list) and all(isinstance(item, dict) for item in arg):
+        return True
+    return False
 
 
 class Library(enum.Enum):

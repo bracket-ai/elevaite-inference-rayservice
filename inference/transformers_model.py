@@ -14,6 +14,7 @@ from inference.utils import (
     BatchingConfig,
     BatchingConfigUpdateRequest,
     BatchingConfigUpdateResponse,
+    InferenceRequest,
     dtype_mapping,
     numpy_to_std,
 )
@@ -216,7 +217,7 @@ class TransformersModelDeployment:
         return results
 
     @web_app.post("/infer")
-    async def infer(self, inference_request: BatchableInferenceRequest) -> dict:
+    async def infer(self, inference_request: InferenceRequest) -> dict:
         """
         **Request Format:**
         ```json
@@ -283,14 +284,8 @@ class TransformersModelDeployment:
         ```
         """
 
-        if not inference_request.args:
-            logger.error("Received request with empty args")
-            raise HTTPException(
-                status_code=HTTPStatus.BAD_REQUEST,
-                detail="Request args cannot be empty",
-            )
-
-        if self.batching_enabled:
+        # If batching is enabled and args is not empty, perform batch inference
+        if inference_request.args and self.batching_enabled:
             try:
                 return await self._batch_infer(inference_request)
             except Exception as e:

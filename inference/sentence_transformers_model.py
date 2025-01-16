@@ -10,12 +10,12 @@ from ray.serve import Application
 from sentence_transformers import SentenceTransformer
 
 from inference.utils import (
-    BatchableInferenceRequest,
     BatchingConfig,
     BatchingConfigUpdateRequest,
     BatchingConfigUpdateResponse,
     InferenceRequest,
     dtype_mapping,
+    is_batchable_inference_request,
     numpy_to_std,
 )
 
@@ -72,19 +72,52 @@ class SentenceTransformersModelDeployment:
         return str(self.model.device)
 
     @serve.batch(max_batch_size=32, batch_wait_timeout_s=0.1)
-    async def _batch_infer(
-        self, requests: list[BatchableInferenceRequest]
-    ) -> list[dict]:
+    async def _batch_infer(self, requests: list[InferenceRequest]) -> list[dict]:
         """
-        SentenceTransformers models support batching, but only for a single set of kwargs per
-        batch of inputs. However, Ray's own batch handler constructs batches of requests with no
-        consideration for each request's contents. In order to allow batching while
-        respecting the kwargs of each request, this function takes a Ray-compiled batch of
-        requests and decomposes them into sub-batches where all requests have the same kwargs,
-        while preserving the order of the requests. It then performs parallel inference for
-        each sub-batch-kwargs pair, one at a time.
+        SentenceTransformers models support batching, but only for a single set of additional
+        encoding parameters per batch of input sentences. However, Ray's batch handler constructs
+        batches of requests with no consideration for each request's contents. As an example,
+        the following requests can be processed in a single batch:
 
-        Example: Given a set of possible kwargs {A, B} and a Ray-compiled batch of
+        ```python
+        requests = [
+            {"args": ["This is a sentence to embed"], "kwargs": {"normalize_embeddings": True}},
+            {"args": ["This is another sentence to embed"], "kwargs": {"normalize_embeddings": True}},
+            {"args": ["This is a third sentence to embed"], "kwargs": {"normalize_embeddings": True}},
+        ]
+        ```
+
+        -->
+
+        batched_request = [
+            {
+                "args": [
+                    "This is a sentence to embed",
+                    "This is another sentence to embed",
+                    "This is a third sentence to embed",
+                ],
+                "kwargs": {"normalize_embeddings": True}, #kwargs are the same for all requests
+            }
+        ]
+        ```
+
+        but the following set of requests cannot be processed in a single batch because they
+        have different encoding params:
+
+        ```python
+        requests = [
+            {"args": ["This is a sentence to embed"], "kwargs": {}},
+            {"args": ["This is a sentence to embed"], "kwargs": {"normalize_embeddings": True}},
+            {"args": ["This is a sentence to embed"], "kwargs": {"normalize_embeddings": False}},
+        ]
+        ```
+
+        In order to allow batching while respecting the kwargs of each request, this function
+        takes a Ray-compiled request batch (type: list[InferenceRequest]) and decomposes
+        it into order-preserving "chunks" in which all requests have the same encoding params,
+        It then performs parallel inference across requests within each sub-batch+kwargs pair.
+
+        Example: Given a set of possible encoding kwargs {A, B} and a Ray-compiled batch of
         requests where both sets of kwargs are present, this function will group the Ray batch
         into four sub-batches:
 
@@ -151,9 +184,25 @@ class SentenceTransformersModelDeployment:
     async def infer(self, inference_request: InferenceRequest) -> dict:
         """
         **Request Format:**
+
+        The request must be formatted as a JSON object with two keys: `args` and `kwargs`.
+        `args` is a list of strings, and `kwargs` is a dictionary of additional inference parameters.
+
+
+        **Single Input:**
         ```json
         {
             "args": ["This is a sentence to embed"],
+            "kwargs": {}
+        }
+        ```
+
+        **Batch Input:**
+        This is also not the most efficient way to batch inference. See 'note on batching'
+        for more details.
+        ```json
+        {
+            "args": [["This is a sentence to embed", "This is another sentence to embed"]],
             "kwargs": {}
         }
         ```
@@ -197,18 +246,34 @@ class SentenceTransformersModelDeployment:
         -H "Content-Type: application/json" \\
         -d '{"args": [["First sentence", "Second sentence"]], "kwargs": {}}'
         ```
+
+        **A Note on Batching:**
+        This model supports batching of requests sent in a single HTTP request (see above), but
+        also allows for opportunistic batching of requests sent in separate HTTP requests to
+        increase GPU utilization. "Batchable" requests should:
+        - never use kwargs to store inputs to be encoded (i.e kwargs = {"sentences": ["This is a sentence to embed"]})
+        - have a single input to be encoded (i.e args = ["This is a sentence to embed"]) so that Elevaite
+        can opportunistically append it to a batch of other requests with the same encoding params.
         """
 
         # If batching is enabled and args is not empty, perform batch inference
         try:
-            if inference_request.args and self.batching_enabled:
+            if (
+                is_batchable_inference_request(inference_request)
+                and self.batching_enabled
+            ):
                 return await self._batch_infer(inference_request)
             else:
+                warnings = [
+                    "Request uses a format which cannot be batched. For better performance, "
+                    "use request format: {'args': [single_inference_input], 'kwargs': {other_params}}"
+                ]
+
                 with torch.no_grad():
                     result = self.model.encode(
                         *inference_request.args, **inference_request.kwargs
                     )
-                    return {"result": numpy_to_std(result)}
+                    return {"result": numpy_to_std(result), "warnings": warnings}
         except Exception as e:
             logger.error(f"Internal Server Error: {e}", exc_info=True)
             raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR)

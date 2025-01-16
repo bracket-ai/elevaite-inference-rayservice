@@ -10,12 +10,12 @@ from ray.serve import Application
 from transformers import pipeline
 
 from inference.utils import (
-    BatchableInferenceRequest,
     BatchingConfig,
     BatchingConfigUpdateRequest,
     BatchingConfigUpdateResponse,
     InferenceRequest,
     dtype_mapping,
+    is_batchable_inference_request,
     numpy_to_std,
 )
 
@@ -124,23 +124,56 @@ class TransformersModelDeployment:
         return str(self.pipe.device)
 
     @serve.batch(max_batch_size=5, batch_wait_timeout_s=0.1)
-    async def _batch_infer(
-        self, requests: list[BatchableInferenceRequest]
-    ) -> list[dict]:
+    async def _batch_infer(self, requests: list[InferenceRequest]) -> list[dict]:
         """
-        Transformers pipelines support batching, but only for a single set of kwargs per
-        batch of inputs. However, Ray's own batch handler constructs batches of requests with no
-        consideration for each request's contents. In order to allow batching while
-        respecting the kwargs of each request, this function takes a Ray-compiled batch of
-        requests and decomposes it into sub-batches where all requests have the same kwargs,
-        while preserving the order of the requests. It then performs parallel inference for
-        each sub-batch-kwargs pair, one at a time.
+        Transformers pipelines support batching, but only for a single set of adttional
+        inference parameters per batch of text inputs. However, Ray's batching mechanism constructs
+        batches of requests with no consideration for each request's contents. As an example,
+        the following requests can be processed in a single batch:
+
+        ```python
+        requests = [
+            {"args": ["Hello world!"], "kwargs": {"do_sample": True}},
+            {"args": ["Is anyone there?"], "kwargs": {"do_sample": True}},
+            {"args": ["Can you hear me?"], "kwargs": {"do_sample": True}},
+        ]
+
+        -->
+
+        batched_request = [
+            {
+                "args": [
+                    "Hello world!",
+                    "Is anyone there!",
+                    "Can you hear me!"
+                ],
+                "kwargs": {"do_sample": True} #kwargs are the same for all requests
+            }
+        ]
+        ```
+
+
+        but the following set of requests cannot be processed in a single batch because they
+        have different inference params:
+
+        ```python
+        requests = [
+            {"args": ["Hello world!"], "kwargs": {}},
+            {"args": ["Is anyone there?"], "kwargs": {"do_sample": True}},
+            {"args": ["Can you hear me?"], "kwargs": {"do_sample": False}},
+        ]
+        ```
+
+        In order to allow batched inference while respecting the params of each request, this
+        function takes a Ray-compiled batch of requests and decomposes it into order-preserving
+        "chunks" in which all requests have the same inference params. It then performs parallel
+        inference across requests within each sub-batch+params pair.
 
         Example: Given a set of possible kwargs {A, B} and a Ray-compiled batch of
         requests where both sets of kwargs are present, this function will group the Ray batch
-        into four sub-batches:
+        into the following sub-batches:
 
-            AAAABBAB -> 1: [AAAA], 2: [BB], 3: [A], 4: [B]
+            [AAAABBAB] -> 1: [AAAA], 2: [BB], 3: [A], 4: [B]
 
         and parallelize inference within each sub-batch. So instead of 8 calls, we only make 4.
         After inference, the results are returned in the same order as the requests were
@@ -220,12 +253,36 @@ class TransformersModelDeployment:
     async def infer(self, inference_request: InferenceRequest) -> dict:
         """
         **Request Format:**
+
+        ***Single Text Generation:***
         ```json
         {
             "args": ["Help me write a poem that rhymes"],
             "kwargs": {"do_sample": false, "max_new_tokens": 50}
         }
         ```
+
+        ***Batched Text Generation:***
+        Note: The `batch_size` kwarg is required for batched inference on transformers models.
+        This is also not the most efficient way to batch inference. See 'note on batching'
+        for more details.
+        ```json
+        [
+            {
+                "args": [
+                    "Help me write a poem that rhymes",
+                    "Help me write a haiku that rhymes. Good luck.",
+                    "Help me write a limerick with 6 lines."
+                ],
+                "kwargs": {
+                    "do_sample": false,
+                    "max_new_tokens": 50,
+                    "batch_size": 3
+                }
+            }
+        ]
+        ```
+
 
         **Chat Example:**
         ```json
@@ -282,10 +339,18 @@ class TransformersModelDeployment:
             "kwargs": {"do_sample": false, "max_new_tokens": 50}
         }'
         ```
+
+        **A Note on Batching:**
+        This model supports batching of requests sent in a single HTTP request (see above), but
+        also allows for opportunistic batching of requests sent in separate HTTP requests to
+        increase GPU utilization. "Batchable" requests should:
+        - never use kwargs to store inference inputs (i.e kwargs = {"text_inputs": ["Write me a poem"]})
+        - have a single input in args (i.e args = ["Generate me a docstring for this code"]) so that Elevaite
+        can opportunistically append it to a batch of other requests with the same inference params.
         """
 
         # If batching is enabled and args is not empty, perform batch inference
-        if inference_request.args and self.batching_enabled:
+        if is_batchable_inference_request(inference_request) and self.batching_enabled:
             try:
                 return await self._batch_infer(inference_request)
             except Exception as e:
@@ -294,6 +359,11 @@ class TransformersModelDeployment:
             finally:
                 self._clear_cache()
         else:
+            warnings = [
+                "Request uses a format which cannot be batched. For better performance, "
+                "use request format: {'args': [single_inference_input], 'kwargs': {other_params}}"
+            ]
+
             args = inference_request.args
             kwargs = inference_request.kwargs
 
@@ -301,7 +371,7 @@ class TransformersModelDeployment:
                 self._clear_cache()
                 with torch.no_grad():
                     result = self.pipe(*args, **kwargs)
-                return {"result": numpy_to_std(result)}
+                return {"result": numpy_to_std(result), "warnings": warnings}
             except Exception as e:
                 self._clear_cache()
                 logger.error(f"Internal Server Error: {e}", exc_info=True)

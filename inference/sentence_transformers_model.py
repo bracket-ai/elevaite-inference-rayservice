@@ -173,10 +173,27 @@ class SentenceTransformersModelDeployment:
                 )
             if len(sub_batch_results.shape) == 2:  # 2D array (batch, embedding_dim)
                 results.extend(
-                    {"result": numpy_to_std(row)} for row in sub_batch_results
+                    {
+                        "result": numpy_to_std(row),
+                        "metadata": {
+                            "batched": True,
+                            "batch_size": len(current_sub_batch_args),
+                        },
+                        "warnings": [],
+                    }
+                    for row in sub_batch_results
                 )
             else:  # Handle case where there's only one dimension
-                results.append({"result": numpy_to_std(sub_batch_results)})
+                results.append(
+                    {
+                        "result": numpy_to_std(sub_batch_results),
+                        "metadata": {
+                            "batched": True,
+                            "batch_size": len(current_sub_batch_args),
+                        },
+                        "warnings": [],
+                    }
+                )
 
         return results
 
@@ -273,7 +290,14 @@ class SentenceTransformersModelDeployment:
                     result = self.model.encode(
                         *inference_request.args, **inference_request.kwargs
                     )
-                    return {"result": numpy_to_std(result), "warnings": warnings}
+
+                    return {
+                        "result": numpy_to_std(result),
+                        "metadata": {
+                            "batched": False,
+                        },
+                        "warnings": warnings,
+                    }
         except Exception as e:
             logger.error(f"Internal Server Error: {e}", exc_info=True)
             raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR)

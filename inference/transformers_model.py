@@ -81,12 +81,14 @@ class TransformersModelDeployment:
         # Set default value
         self.batching_enabled = False
 
-        # Text generation will not work with batching unless the model has a pad token id
+        # If task is not text-generation, we assume batching is enabled
+        # See: https://huggingface.co/docs/transformers/main_classes/pipelines#pipeline-batching
         if self.task != "text-generation":
             self.batching_enabled = True
             return
 
-        # If task = text-generation, check if the tokenizer has a pad token id
+        # Text generation will not work with batching unless the model has a pad token id
+        # Source: https://github.com/huggingface/transformers/blob/main/src/transformers/pipelines/base.py#L151-L155
         # First check if the tokenizer has a pad token id
         if hasattr(self.pipe.tokenizer, "pad_token_id"):
             logger.info("Found pad_token_id attribute in tokenizer")
@@ -217,7 +219,18 @@ class TransformersModelDeployment:
                 logger.info(
                     f"Batch inference completed. Results length: {len(sub_batch_results)}"
                 )
-                results.extend({"result": numpy_to_std(r)} for r in sub_batch_results)
+
+                results.extend(
+                    {
+                        "result": numpy_to_std(r),
+                        "metadata": {
+                            "batched": True,
+                            "batch_size": len(current_sub_batch_args),
+                        },
+                        "warnings": [],
+                    }
+                    for r in sub_batch_results
+                )
 
                 current_sub_batch_args = []
 
@@ -248,7 +261,17 @@ class TransformersModelDeployment:
                 logger.info(
                     f"Batch inference completed. Results length: {len(sub_batch_results)}"
                 )
-                results.extend({"result": numpy_to_std(r)} for r in sub_batch_results)
+                results.extend(
+                    {
+                        "result": numpy_to_std(r),
+                        "metadata": {
+                            "batched": True,
+                            "batch_size": len(current_sub_batch_args),
+                        },
+                        "warnings": [],
+                    }
+                    for r in sub_batch_results
+                )
 
         return results
 
@@ -374,7 +397,13 @@ class TransformersModelDeployment:
                 self._clear_cache()
                 with torch.no_grad():
                     result = self.pipe(*args, **kwargs)
-                return {"result": numpy_to_std(result), "warnings": warnings}
+                return {
+                    "result": numpy_to_std(result),
+                    "metadata": {
+                        "batched": False,
+                    },
+                    "warnings": warnings,
+                }
             except Exception as e:
                 self._clear_cache()
                 logger.error(f"Internal Server Error: {e}", exc_info=True)

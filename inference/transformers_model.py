@@ -1,7 +1,7 @@
+import itertools
 import json
 import logging
 from http import HTTPStatus
-from typing import Any
 
 import torch.cuda
 from fastapi import FastAPI, HTTPException
@@ -189,27 +189,23 @@ class TransformersModelDeployment:
         results: list[dict] = []
 
         # group consecutive requests with the same kwargs
-        current_sub_batch_args: list[Any] = []
-        current_sub_batch_kwargs_key: str = "{}"
+        for sub_batch_kwargs_key, sub_batch in itertools.groupby(
+            requests,
+            key=lambda request: json.dumps(request.kwargs or {}, sort_keys=True),
+        ):
+            sub_batch_args = [request.args[0] for request in list(sub_batch)]
 
-        for request in requests:
-            kwargs_to_serialize = request.kwargs or {}
-            kwargs_key = json.dumps(kwargs_to_serialize, sort_keys=True)
-
-            # If the kwargs have changed and we have a current sub-batch, perform inference
-            if kwargs_key != current_sub_batch_kwargs_key and current_sub_batch_args:
-
+            try:
                 # perform inference for the current sub-batch
-                self._clear_cache()
                 logger.info(
-                    f"Performing batch inference with batch size: {len(current_sub_batch_args)}"
+                    f"Performing batch inference with batch size: {len(sub_batch_args)}"
                 )
                 with torch.no_grad():
                     sub_batch_results = self.pipe(
-                        current_sub_batch_args,
+                        sub_batch_args,
                         **{
-                            **json.loads(current_sub_batch_kwargs_key),
-                            "batch_size": len(current_sub_batch_args),
+                            **json.loads(sub_batch_kwargs_key),
+                            "batch_size": len(sub_batch_args),
                         },
                     )
 
@@ -225,53 +221,21 @@ class TransformersModelDeployment:
                         "result": numpy_to_std(r),
                         "metadata": {
                             "batched": True,
-                            "batch_size": len(current_sub_batch_args),
+                            "batch_size": len(sub_batch_args),
                         },
                         "warnings": [],
                     }
                     for r in sub_batch_results
                 )
+            except Exception as e:
+                logger.error(f"Sub-batch inference error: {e}", exc_info=True)
+                raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR)
+            finally:
+                self._clear_cache()
 
-                current_sub_batch_args = []
-
-            # Args is only ever length 1
-            # args[0] is only ever a list of dicts or a string, so we are safe to append it
-            current_sub_batch_args.append(request.args[0])
-            current_sub_batch_kwargs_key = kwargs_key
-
-        # perform inference for the last sub-batch
-        if current_sub_batch_args:
-
-            self._clear_cache()
-            logger.info(
-                f"Performing batch inference for the last sub-batch with batch size: {len(current_sub_batch_args)}"
-            )
-            with torch.no_grad():
-                sub_batch_results = self.pipe(
-                    current_sub_batch_args,
-                    **{
-                        **json.loads(current_sub_batch_kwargs_key),
-                        "batch_size": len(current_sub_batch_args),
-                    },
-                )
-
-                if not isinstance(sub_batch_results, list):
-                    sub_batch_results = [sub_batch_results]
-
-                logger.info(
-                    f"Batch inference completed. Results length: {len(sub_batch_results)}"
-                )
-                results.extend(
-                    {
-                        "result": numpy_to_std(r),
-                        "metadata": {
-                            "batched": True,
-                            "batch_size": len(current_sub_batch_args),
-                        },
-                        "warnings": [],
-                    }
-                    for r in sub_batch_results
-                )
+        assert len(results) == len(
+            requests
+        ), "Results length does not match requests length"
 
         return results
 

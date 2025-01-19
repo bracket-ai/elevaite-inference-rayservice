@@ -1,7 +1,7 @@
+import itertools
 import json
 import logging
 from http import HTTPStatus
-from typing import Any
 
 import torch.cuda
 from fastapi import FastAPI, HTTPException
@@ -130,54 +130,35 @@ class SentenceTransformersModelDeployment:
         logger.info(f"Starting batch call with {len(requests)} requests")
         results: list[dict] = []
 
-        # Group by kwargs since encode() supports different options
-        current_sub_batch_args: list[Any] = []
-        current_sub_batch_kwargs_key: str = "{}"
+        # group consecutive requests with the same kwargs
+        for sub_batch_kwargs_key, sub_batch in itertools.groupby(
+            requests,
+            key=lambda request: json.dumps(request.kwargs or {}, sort_keys=True),
+        ):
+            sub_batch_args = [request.args[0] for request in list(sub_batch)]
 
-        for request in requests:
-            kwargs_to_serialize = request.kwargs or {}
-            kwargs_key = json.dumps(kwargs_to_serialize, sort_keys=True)
-
-            # If the kwargs have changed and we have a current group, perform inference
-            if kwargs_key != current_sub_batch_kwargs_key and current_sub_batch_args:
-
-                # Process current group
-                with torch.no_grad():
-                    # returns a numpy.ndarray of shape (n_sentences, embedding_dim)
-                    sub_batch_results = self.model.encode(
-                        current_sub_batch_args,
-                        batch_size=len(current_sub_batch_args),
-                        **json.loads(current_sub_batch_kwargs_key),
-                    )
-
-                if len(sub_batch_results.shape) == 2:  # 2D array (batch, embedding_dim)
-                    results.extend(
-                        {"result": numpy_to_std(row)} for row in sub_batch_results
-                    )
-                else:  # Handle case where there's only one dimension (single embedding)
-                    results.append({"result": numpy_to_std(sub_batch_results)})
-                current_sub_batch_args = []
-
-            # args[0] is guaranteed to be string, dict, or list of dicts
-            current_sub_batch_args.append(request.args[0])
-            current_sub_batch_kwargs_key = kwargs_key
-
-        # Process final group
-        if current_sub_batch_args:
-
+            # perform inference for the current sub-batch
+            logger.info(
+                f"Performing batch inference with batch size: {len(sub_batch_args)}"
+            )
             with torch.no_grad():
                 sub_batch_results = self.model.encode(
-                    current_sub_batch_args,
-                    batch_size=len(current_sub_batch_args),
-                    **json.loads(current_sub_batch_kwargs_key),
+                    sub_batch_args,
+                    batch_size=len(sub_batch_args),
+                    **json.loads(sub_batch_kwargs_key),
                 )
+
+            logger.info(
+                f"Batch inference completed. Results shape: {sub_batch_results.shape}"
+            )
+
             if len(sub_batch_results.shape) == 2:  # 2D array (batch, embedding_dim)
                 results.extend(
                     {
                         "result": numpy_to_std(row),
                         "metadata": {
                             "batched": True,
-                            "batch_size": len(current_sub_batch_args),
+                            "batch_size": len(sub_batch_args),
                         },
                         "warnings": [],
                     }
@@ -189,11 +170,15 @@ class SentenceTransformersModelDeployment:
                         "result": numpy_to_std(sub_batch_results),
                         "metadata": {
                             "batched": True,
-                            "batch_size": len(current_sub_batch_args),
+                            "batch_size": len(sub_batch_args),
                         },
                         "warnings": [],
                     }
                 )
+
+        assert len(results) == len(
+            requests
+        ), "Results length does not match requests length"
 
         return results
 

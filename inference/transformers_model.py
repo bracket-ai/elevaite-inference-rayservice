@@ -1,3 +1,5 @@
+import itertools
+import json
 import logging
 from http import HTTPStatus
 
@@ -7,7 +9,15 @@ from ray import serve
 from ray.serve import Application
 from transformers import pipeline
 
-from inference.utils import InferenceRequest, dtype_mapping, numpy_to_std
+from inference.utils import (
+    BatchingConfig,
+    BatchingConfigUpdateRequest,
+    BatchingConfigUpdateResponse,
+    InferenceRequest,
+    dtype_mapping,
+    is_batchable_inference_request,
+    numpy_to_std,
+)
 
 SUPPORTED_HEALTH_CHECK_TASKS = {
     "feature-extraction",
@@ -25,7 +35,7 @@ logger = logging.getLogger("ray.serve")
 web_app = FastAPI()
 
 
-@serve.deployment(health_check_period_s=30)
+@serve.deployment(health_check_period_s=30, max_ongoing_requests=100)
 @serve.ingress(web_app)
 class TransformersModelDeployment:
     def __init__(
@@ -64,6 +74,52 @@ class TransformersModelDeployment:
         # https://github.com/huggingface/transformers/blob/main/src/transformers/pipelines/base.py#L287-L290
         self.pipe = pipeline(**pipe_kwargs)
 
+        self._setup_batching()
+
+    def _setup_batching(self):
+        """Set up batching configuration based on model task and capabilities."""
+        # Set default value
+        self.batching_enabled = False
+
+        # If task is not text-generation, we assume batching is enabled
+        # See: https://huggingface.co/docs/transformers/main_classes/pipelines#pipeline-batching
+        if self.task != "text-generation":
+            self.batching_enabled = True
+            return
+
+        # Text generation will not work with batching unless the model has a pad token id
+        # Source: https://github.com/huggingface/transformers/blob/main/src/transformers/pipelines/base.py#L151-L155
+        # First check if the tokenizer has a pad token id
+        if hasattr(self.pipe.tokenizer, "pad_token_id"):
+            logger.info("Found pad_token_id attribute in tokenizer")
+            if self.pipe.tokenizer.pad_token_id is not None:
+                logger.info(
+                    f"Tokenizer has pad token id: {self.pipe.tokenizer.pad_token_id}"
+                )
+                self.batching_enabled = True
+            else:
+                # Try to fall back to EOS token if available
+                logger.info("Pad token id is None, checking for EOS token as fallback")
+                if hasattr(self.pipe.model.config, "eos_token_id"):
+                    eos_token_id = (
+                        self.pipe.model.config.eos_token_id[0]
+                        if isinstance(self.pipe.model.config.eos_token_id, list)
+                        else self.pipe.model.config.eos_token_id
+                    )
+                    logger.info(f"Setting pad token id to eos token id: {eos_token_id}")
+                    self.pipe.tokenizer.pad_token_id = eos_token_id
+                    self.batching_enabled = True
+                else:
+                    logger.info(
+                        "No EOS token ID found for fallback. Batching will not be supported."
+                    )
+        else:
+            logger.info(
+                "Tokenizer does not have pad_token_id attribute. Batching will not be supported."
+            )
+
+        logger.info(f"Batching enabled: {self.batching_enabled}")
+
     def _clear_cache(self):
         if str(self.pipe.device) == "cuda":
             torch.cuda.empty_cache()
@@ -72,10 +128,123 @@ class TransformersModelDeployment:
     def model_device(self) -> str:
         return str(self.pipe.device)
 
+    @serve.batch(max_batch_size=16, batch_wait_timeout_s=0.1)
+    async def _batch_infer(self, requests: list[InferenceRequest]) -> list[dict]:
+        """
+        Transformers pipelines support batching, but only for a single set of adttional
+        inference parameters per batch of text inputs. However, Ray's batching mechanism constructs
+        batches of requests with no consideration for each request's contents. As an example,
+        the following requests can be processed in a single batch:
+
+        ```python
+        requests = [
+            {"args": ["Hello world!"], "kwargs": {"do_sample": True}},
+            {"args": ["Is anyone there?"], "kwargs": {"do_sample": True}},
+            {"args": ["Can you hear me?"], "kwargs": {"do_sample": True}},
+        ]
+
+        -->
+
+        batched_request = [
+            {
+                "args": [
+                    "Hello world!",
+                    "Is anyone there!",
+                    "Can you hear me!"
+                ],
+                "kwargs": {"do_sample": True} #kwargs are the same for all requests
+            }
+        ]
+        ```
+
+
+        but the following set of requests cannot be processed in a single batch because they
+        have different inference params:
+
+        ```python
+        requests = [
+            {"args": ["Hello world!"], "kwargs": {}},
+            {"args": ["Is anyone there?"], "kwargs": {"do_sample": True}},
+            {"args": ["Can you hear me?"], "kwargs": {"do_sample": False}},
+        ]
+        ```
+
+        In order to allow batched inference while respecting the params of each request, this
+        function takes a Ray-compiled batch of requests and decomposes it into order-preserving
+        "chunks" in which all requests have the same inference params. It then performs parallel
+        inference across requests within each sub-batch+params pair.
+
+        Example: Given a set of possible kwargs {A, B} and a Ray-compiled batch of
+        requests where both sets of kwargs are present, this function will group the Ray batch
+        into the following sub-batches:
+
+            [AAAABBAB] -> 1: [AAAA], 2: [BB], 3: [A], 4: [B]
+
+        and parallelize inference within each sub-batch. So instead of 8 calls, we only make 4.
+        After inference, the results are returned in the same order as the requests were
+        submitted.
+        """
+
+        logger.info(f"Starting batch call with {len(requests)} requests")
+        results: list[dict] = []
+
+        # group consecutive requests with the same kwargs
+        for sub_batch_kwargs_key, sub_batch in itertools.groupby(
+            requests,
+            key=lambda request: json.dumps(request.kwargs or {}, sort_keys=True),
+        ):
+            sub_batch_args = [request.args[0] for request in list(sub_batch)]
+
+            try:
+                # perform inference for the current sub-batch
+                logger.info(
+                    f"Performing batch inference with batch size: {len(sub_batch_args)}"
+                )
+                with torch.no_grad():
+                    sub_batch_results = self.pipe(
+                        sub_batch_args,
+                        **{
+                            **json.loads(sub_batch_kwargs_key),
+                            "batch_size": len(sub_batch_args),
+                        },
+                    )
+
+                if not isinstance(sub_batch_results, list):
+                    sub_batch_results = [sub_batch_results]
+
+                logger.info(
+                    f"Batch inference completed. Results length: {len(sub_batch_results)}"
+                )
+
+                results.extend(
+                    {
+                        "result": numpy_to_std(r),
+                        "metadata": {
+                            "batched": True,
+                            "batch_size": len(sub_batch_args),
+                        },
+                        "warnings": [],
+                    }
+                    for r in sub_batch_results
+                )
+            except Exception as e:
+                logger.error(f"Sub-batch inference error: {e}", exc_info=True)
+                raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR)
+            finally:
+                self._clear_cache()
+
+        assert len(results) == len(
+            requests
+        ), "Results length does not match requests length"
+
+        return results
+
     @web_app.post("/infer")
-    def infer(self, inference_request: InferenceRequest) -> dict:
+    async def infer(self, inference_request: InferenceRequest) -> dict:
         """
         **Request Format:**
+
+        ***Single Text Generation:***
         ```json
         {
             "args": ["Help me write a poem that rhymes"],
@@ -83,20 +252,51 @@ class TransformersModelDeployment:
         }
         ```
 
-        **Batch Processing:**
+        ***Batched Text Generation:***
+        Note: The `batch_size` kwarg is required for batched inference on transformers models.
+        This is also not the most efficient way to batch inference. See 'note on batching'
+        for more details.
+        ```json
+        [
+            {
+                "args": [
+                    "Help me write a poem that rhymes",
+                    "Help me write a haiku that rhymes. Good luck.",
+                    "Help me write a limerick with 6 lines."
+                ],
+                "kwargs": {
+                    "do_sample": false,
+                    "max_new_tokens": 50,
+                    "batch_size": 3
+                }
+            }
+        ]
+        ```
+
+
+        **Chat Example:**
         ```json
         {
-            "args": [["Write a haiku", "Write a limerick"]],
-            "kwargs": {"do_sample": false, "max_new_tokens": 50}
+            "args": [
+                [
+                    {"role": "system", "content": "You are a helpful assistant."},
+                    {"role": "user", "content": "What is the capital of France?"},
+                    {"role": "assistant", "content": "The capital of France is Paris."},
+                    {"role": "user", "content": "What is its population?"}
+                ]
+            ],
+            "kwargs": {
+                "do_sample": true,
+                "temperature": 0.7,
+                "max_new_tokens": 100
+            }
         }
         ```
 
         **Example Python code:**
         ```python
         import requests
-
         url = "<URL>/<model_id>/infer"
-
         # Single text generation
         payload = {
             "args": ["Help me write a poem that rhymes"],
@@ -106,21 +306,10 @@ class TransformersModelDeployment:
             }
         }
 
-        # Or batch text generation
-        batch_payload = {
-            "args": [["Write a haiku", "Write a limerick"]],
-            "kwargs": {
-                "do_sample": False,
-                "max_new_tokens": 50
-            }
-        }
-
         headers = {"Content-Type": "application/json"}
-
         # Basic authentication credentials
         username = "your_username"
         password = "your_password"
-
         response = requests.post(
             url,
             json=payload,  # or batch_payload
@@ -129,9 +318,7 @@ class TransformersModelDeployment:
         )
         result = response.json()
         ```
-
         **Example curl commands:**
-
         Single generation:
         ```bash
         curl -X POST "<URL>/<model_id>/infer" \
@@ -143,32 +330,50 @@ class TransformersModelDeployment:
         }'
         ```
 
-        Batch generation:
-        ```bash
-        curl -X POST "<URL>/<model_id>/infer" \
-        -H "Content-Type: application/json" \
-        -u <username>:<password> \
-        -d '{
-            "args": [["Write a haiku", "Write a limerick"]],
-            "kwargs": {"do_sample": false, "max_new_tokens": 50}
-        }'
-        ```
+        **A Note on Batching:**
+        This model supports batching of requests sent in a single HTTP request (see above), but
+        also allows for opportunistic batching of requests sent in separate HTTP requests to
+        increase GPU utilization. "Batchable" requests should:
+        - never use kwargs to store inference inputs (i.e kwargs = {"text_inputs": ["Write me a poem"]})
+        - have a single input in args (i.e args = ["Generate me a docstring for this code"]) so that Elevaite
+        can opportunistically append it to a batch of other requests with the same inference params.
         """
 
-        args = inference_request.args
-        kwargs = inference_request.kwargs
+        # If batching is enabled and args is not empty, perform batch inference
+        if is_batchable_inference_request(inference_request) and self.batching_enabled:
+            try:
+                return await self._batch_infer(inference_request)
+            except Exception as e:
+                logger.error(f"Batch Inference Error: {e}", exc_info=True)
+                raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR)
+            finally:
+                self._clear_cache()
+        else:
+            warnings = [
+                "Request uses a format which cannot be batched. For better performance, "
+                "use request format: {'args': [single_inference_input], 'kwargs': {other_params}}"
+            ]
 
-        try:
-            self._clear_cache()
-            with torch.no_grad():
-                result = self.pipe(*args, **kwargs)
-            return {"result": numpy_to_std(result)}
-        except Exception as e:
-            self._clear_cache()
-            logger.error(f"Internal Server Error: {e}", exc_info=True)
-            raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR)
-        finally:
-            self._clear_cache()
+            args = inference_request.args
+            kwargs = inference_request.kwargs
+
+            try:
+                self._clear_cache()
+                with torch.no_grad():
+                    result = self.pipe(*args, **kwargs)
+                return {
+                    "result": numpy_to_std(result),
+                    "metadata": {
+                        "batched": False,
+                    },
+                    "warnings": warnings,
+                }
+            except Exception as e:
+                self._clear_cache()
+                logger.error(f"Internal Server Error: {e}", exc_info=True)
+                raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR)
+            finally:
+                self._clear_cache()
 
     @web_app.get("/model_config")
     def model_config(self):
@@ -209,6 +414,50 @@ class TransformersModelDeployment:
             )
         finally:
             self._clear_cache()
+
+    @web_app.post("/reconfigure")
+    def reconfigure(
+        self, config: BatchingConfigUpdateRequest
+    ) -> BatchingConfigUpdateResponse:
+        """Update batch processing configuration."""
+        if not self.batching_enabled:
+            raise HTTPException(
+                status_code=HTTPStatus.BAD_REQUEST,
+                detail="Batching is not enabled for this model",
+            )
+
+        message = []
+
+        if config.max_batch_size:
+            self._batch_infer.set_max_batch_size(config.max_batch_size)
+            message.append(f"max_batch_size updated to {config.max_batch_size}")
+
+        if config.batch_wait_timeout_s:
+            self._batch_infer.set_batch_wait_timeout_s(config.batch_wait_timeout_s)
+            message.append(
+                f"batch_wait_timeout_s updated to {config.batch_wait_timeout_s}"
+            )
+
+        return BatchingConfigUpdateResponse(
+            max_batch_size=self._batch_infer._get_max_batch_size(),
+            batch_wait_timeout_s=self._batch_infer._get_batch_wait_timeout_s(),
+            message=", ".join(message) if message else "No changes made",
+        )
+
+    @web_app.get("/batch_config")
+    def get_batch_config(self) -> BatchingConfig:
+        """Get current batch processing configuration."""
+
+        if not self.batching_enabled:
+            raise HTTPException(
+                status_code=HTTPStatus.BAD_REQUEST,
+                detail="Batching is not enabled for this model",
+            )
+
+        return BatchingConfig(
+            max_batch_size=self._batch_infer._get_max_batch_size(),
+            batch_wait_timeout_s=self._batch_infer._get_batch_wait_timeout_s(),
+        )
 
 
 def app_builder(args: dict) -> Application:
